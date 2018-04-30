@@ -12,7 +12,7 @@ f = Expression('cos(20*x[0])*sin(15*x[1])', degree=2)
 u_D = f
 def boundary(x, on_boundary):
     return on_boundary
-bc = DirichletBC(V, u_D, boundary) #require u = f on the boundary
+bc = NeumannBC(V, u_D, boundary) #require u = f on the boundary
 
 # Define variational problem
 u = TrialFunction(V)
@@ -44,9 +44,13 @@ print('error_max =', error_max)
 #Iterative method
 
 un = 0
-F = [0]
+
+import numpy as np
+F = np.zeros(10)
  
-for i in range(1,10):
+for i in range(0,10):
+    
+    #find grad(F) using current u iterate
     GF = TrialFunction(V)
     a = GF*phi*dx
     L = (un - f)*phi*dx
@@ -54,12 +58,18 @@ for i in range(1,10):
     GF = Function(V)
     solve(a == L, GF, bc)
     
-    un = un - 0.25 * GF
-#    vertex_values_u_D = u_D.compute_vertex_values(mesh)
-#    vertex_values_un = un.compute_vertex_values(mesh)
-#    import numpy as np
-#    error_max = np.max(np.abs(vertex_values_u_D - vertex_values_un))
+    #calculate new un iterate 
+    #(must use assign method to ensure un has dolfin.functions.function.Function type)
+    GF.assign(un - 0.25 * GF)
+    un = GF
+    vertex_values_u_D = u_D.compute_vertex_values(mesh)
+    vertex_values_un = un.compute_vertex_values(mesh)
+    error_max = np.max(np.abs(vertex_values_u_D - vertex_values_un))
     
-    #F[i] = errornorm(u_D, un, 'L2')
+    F[i] = errornorm(u_D, un, 'L2')
+    
+import matplotlib.pyplot as plt
+plt.figure()
+plt.plot(F)
     
     
