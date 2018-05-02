@@ -23,13 +23,13 @@ solve(a == L, u)
 plot(u)
 
 # Compute error in L2 norm
-error_L2 = errornorm(u_D, u, 'L2')
+error_L2 = errornorm(f, u, 'L2')
 
 # Compute maximum error at vertices
-vertex_values_u_D = u_D.compute_vertex_values(mesh)
+vertex_values_f = f.compute_vertex_values(mesh)
 vertex_values_u = u.compute_vertex_values(mesh)
 import numpy as np
-error_max = np.max(np.abs(vertex_values_u_D - vertex_values_u))
+error_max = np.max(np.abs(vertex_values_f - vertex_values_u))
 
 # Print errors
 print('error_L2  =', error_L2)
@@ -56,7 +56,7 @@ for i in range(0,10):
     #(must use assign method to ensure un has dolfin.functions.function.Function type)
     GF.assign(un - 0.25 * GF)
     un = GF
-    F[i] = errornorm(u_D, un, 'L2')
+    F[i] = errornorm(f, un, 'L2')
     
 import matplotlib.pyplot as plt
 plt.figure()
