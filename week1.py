@@ -8,12 +8,6 @@ f = Expression('cos(20*x[0])*sin(15*x[1])', degree=2)
 
 #'One shot' method
 
-# Define boundary condition
-u_D = f
-def boundary(x, on_boundary):
-    return on_boundary
-bc = NeumannBC(V, u_D, boundary) #require u = f on the boundary
-
 # Define variational problem
 u = TrialFunction(V)
 phi = TestFunction(V)
@@ -23,7 +17,7 @@ L = f*phi*dx
 
 # Compute solution
 u = Function(V)
-solve(a == L, u, bc)
+solve(a == L, u)
 
 # Plot solution and mesh
 plot(u)
@@ -56,16 +50,12 @@ for i in range(0,10):
     L = (un - f)*phi*dx
     
     GF = Function(V)
-    solve(a == L, GF, bc)
+    solve(a == L, GF)
     
     #calculate new un iterate 
     #(must use assign method to ensure un has dolfin.functions.function.Function type)
     GF.assign(un - 0.25 * GF)
     un = GF
-    vertex_values_u_D = u_D.compute_vertex_values(mesh)
-    vertex_values_un = un.compute_vertex_values(mesh)
-    error_max = np.max(np.abs(vertex_values_u_D - vertex_values_un))
-    
     F[i] = errornorm(u_D, un, 'L2')
     
 import matplotlib.pyplot as plt
