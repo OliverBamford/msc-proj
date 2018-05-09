@@ -19,9 +19,17 @@ def left_boundary(x, on_boundary):
     
 def right_boundary(x, on_boundary):
     return on_boundary and abs(x[0]-1) < BCtol
-    
-mesh = UnitIntervalMesh(100)
-V = FunctionSpace(mesh, 'CG', 1)
+N = 100
+if d == 1:
+    mesh = UnitIntervalMesh(N)
+elif d == 2:
+    mesh = UnitSquareMesh(N,N)
+else:
+    #experiments in higher dimensions are too expensive
+    raise NotImplementedError
+
+p = 1
+V = FunctionSpace(mesh, 'CG', p)
 
 # Define variational problem for Picard iteration
 u = TrialFunction(V)

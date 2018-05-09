@@ -13,8 +13,7 @@ def getPDEConvData(a, f, u_k, uexact, mesh, dim, fnSpace, meshSize, deg, bcs = F
     v = TestFunction(V)
     L = f*v*dx
     
-
-    
+    #sample solution, not necessary with errornorm.. update this
     if dim == 1:
         x = np.linspace(1,0,deg*meshSize + 1)
         UE = uexact(x) # exact solution over unit interval
@@ -24,17 +23,14 @@ def getPDEConvData(a, f, u_k, uexact, mesh, dim, fnSpace, meshSize, deg, bcs = F
         meshE = np.meshgrid(x,y)
         UE = uexact(meshE)
         
-        
     u = Function(V)     # new unknown function
     err = 1.0           # error measure ||u-u_k||
     iterDiffArray = []
     exactErrArray = []   
         
-    tol = 1.0E-5        # tolerance
+    tol = 1.0E-5        # tolerance  <- should be an input
     iter = 0            # iteration counter
     maxiter = 25        # max no of iterations allowed
-    
-    
     
     # Begin Picard iterations
     while err > tol and iter < maxiter:
