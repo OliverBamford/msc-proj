@@ -3,12 +3,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 from getPDEConvData import *
 
+#%%************** Problem 1 **************
+
 m = 2;
 def q(u):
     return (1+u)**m
     
 def ue(x):
     return ((2**(m+1)-1)*x + 1)**(1/(m+1)) - 1 
+
+mesh = UnitIntervalMesh(100)
+V = FunctionSpace(mesh, 'CG', 1)
 
 # Define variational problem for Picard iteration
 u = TrialFunction(V)
@@ -30,4 +35,23 @@ B1 = DirichletBC(V, Constant(0.0), left_boundary) # u(0) = 0
 B2 = DirichletBC(V, Constant(1.0), right_boundary) # u(1) = 1
 bcs = [B1, B2]
 
-[uDiff, exactError] = getPDEConvData(a, f, bcs, ue, 100, 1, dispOutput = True)
+
+[uDiff, exactError] = getPDEConvData(a, f, u_k, ue, mesh, 1, V, 100, 1, bcs, dispOutput = True)
+
+#%%************** Problem 2 **************
+
+mesh = UnitSquareMesh(100,100)
+V = FunctionSpace(mesh, 'CG', 1)
+f = Expression('cos(20*x[0])*sin(15*x[1])', degree=1)
+
+u = TrialFunction(V)
+v = TestFunction(V)
+
+u_k = Expression('x[0] + x[1]', degree=1)
+a = u_k*v*dx
+
+def ue(XY):
+    return np.cos(20*XY[0])*np.sin(15*XY[1])
+
+[uDiff, exactError] = getPDEConvData(a, f, u_k, ue, mesh, 2, V, 100, 1, bcs = False, dispOutput = True)
+
