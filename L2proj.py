@@ -50,7 +50,7 @@ class L2proj:
         iter = 0
         
         f = self.f
-        u_k = interpolate(Constant(0.0), V)
+        u_k = interpolate(Constant(0.0), V) #initial guess u_0
         # begin steepest descent
         while itErr > iterTol and iter < maxIter:
             iter += 1
@@ -75,4 +75,55 @@ class L2proj:
             # update un iterate 
             u_k.assign(u)
         
+        return [u_k, iterDiffArray, exactErrArray]
+        
+    def solveNewton(self, iterTol = 1.0e-5, maxIter = 25, dispOutput = False):
+        """
+        Finds the L2 projection of f using Newton iterations
+        
+        Inputs:
+        iterTol: Iterations stop when |u_(k) - u_(k-1)| < iterTol. Default: 1e-5
+        maxIter: Maximum number of iterations
+        dispOutput(True/False): display iteration differences and exact errors at each iteration
+        
+        Outputs:
+        u: solution to PDE
+        iterDiffArray: Differences between iterative solutions (in L2 norm) at each iteration
+        exactErrArray: Exact errors (in L2 norm) at each iteration
+        """
+        
+        V = self.V
+        v = TestFunction(V)
+        f = self.f
+
+        u_k = interpolate(Constant(0.0), V) #initial guess u_0
+        
+        # construct problem in Newton step du
+        du = TrialFunction(V)
+        a = du*v*dx
+        L = -(u_k - f)*v*dx        
+        
+                
+        du = Function(V)
+        u = Function(V)
+        itErr = 1.0
+        iterDiffArray = []
+        exactErrArray = []
+        iter = 0
+        while itErr > iterTol and iter < maxIter:
+            iter += 1
+            
+            solve(a == L, du)
+            u.vector()[:] = u_k.vector() + du.vector()
+            
+            # calculate iterate difference and exact error in L2 norm
+            itErr = errornorm(u_k, u, 'L2')
+            exErr = errornorm(f, u, 'L2')
+            iterDiffArray.append(itErr) # fill arrays with error data
+            exactErrArray.append(exErr)    
+            
+            if dispOutput:
+                print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + ', exact error = ' + str(exErr))
+            u_k.assign(u)
+            
         return [u_k, iterDiffArray, exactErrArray]
