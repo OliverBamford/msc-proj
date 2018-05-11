@@ -15,8 +15,6 @@ class L2proj:
         self.f = f
         
         # set up function space
-        mesh = UnitIntervalMesh(N)
-        self.V = FunctionSpace(mesh, 'CG', p)
         if d == 1:
             mesh = UnitIntervalMesh(N)
         elif d == 2:
@@ -24,7 +22,7 @@ class L2proj:
         else:
             #experiments in higher dimensions are too expensive
             raise NotImplementedError
-
+        self.V = FunctionSpace(mesh, 'CG', p)
                             
     def solveSD(self, alpha = 1, iterTol = 1.0e-5, maxIter = 25, dispOutput = False):
         """
