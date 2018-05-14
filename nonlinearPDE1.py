@@ -18,8 +18,6 @@ class nonlinearPDE1:
 
         # construct exact solution in C format
         self.uExpr = Expression('pow((pow(2,m+1) - 1)*x[0] + 1,(1/(m+1))) - 1', m = 2, degree=4)
-        # interpolate over function space
-        #self.ue = interpolate(uExpr, self.V)
         
     def left_boundary(self, x, on_boundary):
             return on_boundary and abs(x[0]) < 1E-14
@@ -30,19 +28,27 @@ class nonlinearPDE1:
     def dqdu(self,u):
             return 2*(1+u)
             
-    def solvePicard(self, iterTol = 1.0e-5, maxIter = 25, dispOutput = False):
+    def solvePicard(self, iterTol = 1.0e-5, maxIter = 25, dispOutput = False, writeData = True, filePath = 'solution-data/PDE1Picard'):
         """
         Solves the PDE using Picard iterations
         
         Inputs:
         iterTol: Iterations stop when |u_(k) - u_(k-1)| < iterTol. Default: 1e-5
         maxIter: Maximum number of iterations
-        dispOutput(True/False): display iteration differences and exact errors at each iteration
+        dispOutput(bool): display iteration differences and exact errors at each iteration
+        writeData(True/False): write solution and convergence data to files
+        filePath: Path AND name of files WITHOUT file extension
         
         Outputs:
         u: solution to PDE
         iterDiffArray: Differences between iterative solutions (in L2 norm) at each iteration
         exactErrArray: Exact errors (in L2 norm) at each iteration
+        
+        Saved data:
+        FEniCS solution saved to <filePath>.pvd
+        Convergence data saved to <filePath>.csv:
+            column 0: iterate differences
+            column 1: exact errors
         """
         
         V = self.V
@@ -77,10 +83,22 @@ class nonlinearPDE1:
             if dispOutput:
                 print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + ', exact error = ' + str(exErr))
             u_k.assign(u)   # update for next iteration
+        
+        if writeData:
+            # save solution
+            solution = File(filePath + '.pvd')
+            solution << u_k
+            # save convergence data
+            convergenceData = [iterDiffArray, exactErrArray]
+            np.savetxt(filePath + '.csv', convergenceData)
             
+        # save data to object
+        self.picardSol = u_k
+        self.picardIterDiff = iterDiffArray
+        self.picardExactErr = exactErrArray
         return [u_k, iterDiffArray, exactErrArray]
         
-    def solveNewton(self, iterTol = 1.0e-5, maxIter = 25, dispOutput = False):
+    def solveNewton(self, iterTol = 1.0e-5, maxIter = 25, dispOutput = False, writeData = True, filePath = 'solution-data/PDE1Newton'):
         """
         Solves the PDE using Newton iterations
         
@@ -88,6 +106,8 @@ class nonlinearPDE1:
         iterTol: Iterations stop when |u_(k) - u_(k-1)| < iterTol. Default: 1e-5
         maxIter: Maximum number of iterations
         dispOutput(True/False): display iteration differences and exact errors at each iteration
+        writeData(True/False): write solution and convergence data to files
+        filePath: Path AND name of files WITHOUT file extension
         
         Outputs:
         u: solution to PDE
@@ -137,5 +157,17 @@ class nonlinearPDE1:
             if dispOutput:
                 print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + ', exact error = ' + str(exErr))
             u_k.assign(u)
+        
+        if writeData:
+            # save solution
+            solution = File(filePath + '.pvd')
+            solution << u_k
+            # save convergence data
+            convergenceData = [iterDiffArray, exactErrArray]
+            np.savetxt(filePath + '.csv', convergenceData)
             
+        # save data to object
+        self.newtonSol = u_k
+        self.newtonIterDiff = iterDiffArray
+        self.newtonExactErr = exactErrArray  
         return [u_k, iterDiffArray, exactErrArray]

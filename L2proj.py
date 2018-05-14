@@ -24,7 +24,7 @@ class L2proj:
             raise NotImplementedError
         self.V = FunctionSpace(mesh, 'CG', p)
                             
-    def solveSD(self, alpha = 1, iterTol = 1.0e-5, maxIter = 25, dispOutput = False):
+    def solveSD(self, alpha = 1, iterTol = 1.0e-5, maxIter = 25, dispOutput = False, writeData = True, filePath = 'solution-data/L2projSD'):
         """
         Finds the L2 projection of f using steepest descent
         
@@ -33,6 +33,8 @@ class L2proj:
         iterTol: Iterations stop when |u_(k) - u_(k-1)| < iterTol. Default: 1e-5
         maxIter: Maximum number of iterations
         dispOutput(True/False): display iteration differences and exact errors at each iteration
+        writeData(True/False): write solution and convergence data to files
+        filePath: Path AND name of files WITHOUT file extension
         
         Outputs:
         u: L2 projection of f
@@ -70,12 +72,24 @@ class L2proj:
             if dispOutput:
                 print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + ', exact error = ' + str(exErr))
                 
-            # update un iterate 
+            # update u iterate 
             u_k.assign(u)
         
+        if writeData:
+            # save solution
+            solution = File(filePath + '.pvd')
+            solution << u_k
+            # save convergence data
+            convergenceData = [iterDiffArray, exactErrArray]
+            np.savetxt(filePath + '.csv', convergenceData)
+            
+        # save data to object
+        self.SDSol = u_k
+        self.SDIterDiff = iterDiffArray
+        self.SDExactErr = exactErrArray
         return [u_k, iterDiffArray, exactErrArray]
         
-    def solveNewton(self, iterTol = 1.0e-5, maxIter = 25, dispOutput = False):
+    def solveNewton(self, iterTol = 1.0e-5, maxIter = 25, dispOutput = False, writeData = True, filePath = 'solution-data/L2projNewton'):
         """
         Finds the L2 projection of f using Newton iterations
         
@@ -83,6 +97,8 @@ class L2proj:
         iterTol: Iterations stop when |u_(k) - u_(k-1)| < iterTol. Default: 1e-5
         maxIter: Maximum number of iterations
         dispOutput(True/False): display iteration differences and exact errors at each iteration
+        writeData(True/False): write solution and convergence data to files
+        filePath: Path AND name of files WITHOUT file extension
         
         Outputs:
         u: solution to PDE
@@ -124,4 +140,17 @@ class L2proj:
                 print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + ', exact error = ' + str(exErr))
             u_k.assign(u)
             
+        if writeData:
+            # save solution
+            solution = File(filePath + '.pvd')
+            solution << u_k
+            # save convergence data
+            convergenceData = [iterDiffArray, exactErrArray]
+            np.savetxt(filePath + '.csv', convergenceData)
+            
+        # save data to object
+        self.newtonSol = u_k
+        self.newtonIterDiff = iterDiffArray
+        self.newtonExactErr = exactErrArray  
+        return [u_k, iterDiffArray, exactErrArray]
         return [u_k, iterDiffArray, exactErrArray]
