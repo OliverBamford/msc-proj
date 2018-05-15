@@ -1,3 +1,7 @@
+from fenics import *
+import matplotlib.pyplot as plt
+import numpy as np
+
 class L2proj:
     def __init__(self, N, p, d, f):
         """
@@ -55,18 +59,18 @@ class L2proj:
         while itErr > iterTol and iter < maxIter:
             iter += 1
             
-            #find grad(F) using current u iterate
+            # find grad(F) using current u iterate
             GF = TrialFunction(V)
             a = GF*v*dx
             L = (u_k - f)*v*dx
             GF = Function(V)
             solve(a == L, GF)
             
-            u.assign(u_k - alpha * GF)
+            u.assign(u_k - alpha * GF) # calculate errors
             itErr = errornorm(u_k, u, 'L2')
             exErr = errornorm(f, u, 'L2')
             
-            iterDiffArray.append(itErr) # fill array with error data
+            iterDiffArray.append(itErr) # fill arrays with error data
             exactErrArray.append(exErr)    
         
             if dispOutput:
@@ -154,3 +158,61 @@ class L2proj:
         self.newtonExactErr = exactErrArray  
         return [u_k, iterDiffArray, exactErrArray]
         return [u_k, iterDiffArray, exactErrArray]
+        
+    def plotConvergence(self):
+        """
+        Plots the convergence data (exact errors and iterate differences) for 
+        Newton and/or SD soltutions of the given L2 projection
+        """
+        
+        # check which methods have been used to find L2 projection
+        if hasattr(self, 'newtonSol'):
+            plt.figure(1)
+            plt.suptitle('Convergence data for L2 projection')
+            
+            plt.subplot(1,2,1)
+            plt.plot(self.newtonExactErr)
+            plt.ylabel('Newton exact error')
+            plt.xlabel('iteration')
+            
+            plt.subplot(1,2,2)
+            plt.plot(self.newtonIterDiff)
+            plt.ylabel('Newton iterate difference')
+            plt.xlabel('iteration')
+            
+            if hasattr(self, 'SDSol'):
+                plt.figure(2)
+                plt.suptitle('Convergence data for L2 projection')
+                
+                plt.subplot(1,2,1)
+                plt.plot(self.SDExactErr)
+                plt.ylabel('SD exact error')
+                plt.xlabel('iteration')
+                
+                plt.subplot(1,2,2)
+                plt.plot(self.SDIterDiff)
+                plt.ylabel('SD iterate difference')
+                plt.xlabel('iteration')
+            else:
+                print 'No SD solution calculated, run solveSD method first'   
+                
+        elif hasattr(self, 'SDSol'):
+                print 'No Newton solution calculated, run solveNewton method first'
+                plt.figure(1)
+                plt.suptitle('Convergence data for L2 projection')
+                
+                plt.subplot(1,2,1)
+                plt.plot(self.SDExactErr)
+                plt.ylabel('SD exact error')
+                plt.xlabel('iteration')
+                
+                plt.subplot(1,2,2)
+                plt.plot(self.SDIterDiff)
+                plt.ylabel('SD iterate difference')
+                plt.xlabel('iteration')
+        else:
+            print 'Nothing to plot...'
+            
+
+
+            

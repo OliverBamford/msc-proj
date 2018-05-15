@@ -1,3 +1,7 @@
+from fenics import *
+import matplotlib.pyplot as plt
+import numpy as np
+
 class nonlinearPDE1:
     def __init__(self, N, p):
         """
@@ -171,3 +175,54 @@ class nonlinearPDE1:
         self.newtonIterDiff = iterDiffArray
         self.newtonExactErr = exactErrArray  
         return [u_k, iterDiffArray, exactErrArray]
+        
+    def plotConvergence(self):
+        """
+        Plots the convergence data (exact errors and iterate differences) for 
+        Newton and/or Picard soltutions of the given PDE
+        """
+        # check which methods have been used to solve PDE           
+        if hasattr(self, 'newtonSol'):
+            plt.figure(1)
+            plt.suptitle('Convergence data for PDE solution')
+            
+            plt.subplot(1,2,1)
+            plt.plot(self.newtonExactErr)
+            plt.ylabel('Newton exact error')
+            plt.xlabel('iteration')
+            plt.subplot(1,2,2)
+            
+            plt.plot(self.newtonIterDiff)
+            plt.ylabel('Newton iterate difference')
+            plt.xlabel('iteration')
+            if hasattr(self, 'picardSol'):
+                plt.figure(2)
+                plt.suptitle('Convergence data for PDE solution')
+                
+                plt.subplot(1,2,1)
+                plt.plot(self.picardExactErr)
+                plt.ylabel('Picard exact error')
+                plt.xlabel('iteration')
+                
+                plt.subplot(1,2,2)
+                plt.plot(self.picardIterDiff)
+                plt.ylabel('Picard iterate difference')
+                plt.xlabel('iteration')
+            else:
+                print 'No Picard solution calculated, run solvePicard method first'       
+        elif hasattr(self, 'picardSol'):
+                print 'No Newton solution calculated, run solveNewton method first'
+                plt.figure(1)
+                plt.suptitle('Convergence data for PDE solution')
+                
+                plt.subplot(1,2,1)
+                plt.plot(self.picardExactErr)
+                plt.ylabel('Picard exact error')
+                plt.xlabel('iteration')
+                
+                plt.subplot(1,2,2)
+                plt.plot(self.picardIterDiff)
+                plt.ylabel('Picard iterate difference')
+                plt.xlabel('iteration')
+        else:
+            print 'Nothing to plot...'
