@@ -179,40 +179,25 @@ class L2proj:
             plt.plot(self.newtonIterDiff)
             plt.ylabel('Newton iterate difference')
             plt.xlabel('iteration')
-            
-            if hasattr(self, 'SDSol'):
-                plt.figure(2)
-                plt.suptitle('Convergence data for L2 projection')
-                
-                plt.subplot(1,2,1)
-                plt.plot(self.SDExactErr)
-                plt.ylabel('SD exact error')
-                plt.xlabel('iteration')
-                
-                plt.subplot(1,2,2)
-                plt.plot(self.SDIterDiff)
-                plt.ylabel('SD iterate difference')
-                plt.xlabel('iteration')
-            else:
-                print 'No SD solution calculated, run solveSD method first'   
-                
-        elif hasattr(self, 'SDSol'):
-                print 'No Newton solution calculated, run solveNewton method first'
-                plt.figure(1)
-                plt.suptitle('Convergence data for L2 projection')
-                
-                plt.subplot(1,2,1)
-                plt.plot(self.SDExactErr)
-                plt.ylabel('SD exact error')
-                plt.xlabel('iteration')
-                
-                plt.subplot(1,2,2)
-                plt.plot(self.SDIterDiff)
-                plt.ylabel('SD iterate difference')
-                plt.xlabel('iteration')
         else:
-            print 'Nothing to plot...'
+            print 'No Newton solution, run solveNewton first'
             
-
+        if hasattr(self, 'SDSol'):
+            plt.figure(2)
+            plt.suptitle('Convergence data for L2 projection')
+            
+            plt.subplot(1,2,1)
+            plt.plot(self.SDExactErr)
+            plt.ylabel('SD exact error')
+            plt.xlabel('iteration')
+            
+            plt.subplot(1,2,2)
+            plt.plot(self.SDIterDiff)
+            plt.ylabel('SD iterate difference')
+            plt.xlabel('iteration')
+        else:
+            print 'No SD solution calculated, run solveSD method first'   
+            
+        
 
             
