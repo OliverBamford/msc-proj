@@ -116,7 +116,7 @@ class nonlinearPDE1:
         Outputs:
         u: solution to PDE
         iterDiffArray: Differences between iterative solutions (in L2 norm) at each iteration
-        exactErrArray: Exact errors (in L2 norm) at each iteration
+        exactErrArray: Exact errors (in L2 norm) at each iteration ###why L2 norm and not H1?? explain/investigate
         """
         
         V = self.V

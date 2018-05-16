@@ -12,8 +12,8 @@ class L2proj:
         
         Inputs:
         N: number of finite elements in mesh
-        p: order of function space
-        d: dimension of function space (1 or 2)
+        p: degree of Lagrangian finite element space
+        d: dimension of physical domain (1 or 2)
         f: UFL expression
         """
         self.f = f
@@ -30,11 +30,11 @@ class L2proj:
                             
     def solveSD(self, alpha = 1, iterTol = 1.0e-5, maxIter = 25, dispOutput = False, writeData = True, filePath = 'solution-data/L2projSD'):
         """
-        Finds the L2 projection of f using steepest descent
+        Finds the L2 projection of f using steepest descent (SD)
         
         Inputs:
         alpha: SD step size
-        iterTol: Iterations stop when |u_(k) - u_(k-1)| < iterTol. Default: 1e-5
+        iterTol: Iterations stop when norm(u_(k) - u_(k-1), "L2) < iterTol. Default: 1e-5
         maxIter: Maximum number of iterations
         dispOutput(True/False): display iteration differences and exact errors at each iteration
         writeData(True/False): write solution and convergence data to files
@@ -43,7 +43,7 @@ class L2proj:
         Outputs:
         u: L2 projection of f
         iterDiffArray: Differences between iterative solutions (in L2 norm) at each iteration
-        exactErrArray: Exact errors (in L2 norm) at each iteration
+        exactErrArray: ??? errors (in L2 norm) at each iteration
         """
         V = self.V
         v = TestFunction(V)
@@ -68,7 +68,7 @@ class L2proj:
             
             u.assign(u_k - alpha * GF) # calculate errors
             itErr = errornorm(u_k, u, 'L2')
-            exErr = errornorm(f, u, 'L2')
+            exErr = errornorm(f, u, 'L2') #TODO: find out the details of this and explain in line 46
             
             iterDiffArray.append(itErr) # fill arrays with error data
             exactErrArray.append(exErr)    
@@ -132,7 +132,7 @@ class L2proj:
             iter += 1
             
             solve(a == L, du)
-            u.vector()[:] = u_k.vector() + du.vector()
+            u.vector()[:] = u_k.vector() + du.vector() #TODO: why a different syntax here compare to line 69?
             
             # calculate iterate difference and exact error in L2 norm
             itErr = errornorm(u_k, u, 'L2')
