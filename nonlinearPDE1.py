@@ -45,8 +45,8 @@ class nonlinearPDE1:
         
         Outputs:
         u: solution to PDE
-        iterDiffArray: Differences between iterative solutions (in L2 norm) at each iteration
-        exactErrArray: Exact errors (in L2 norm) at each iteration
+        iterDiffArray: Differences between iterative solutions (in H1 norm) at each iteration
+        exactErrArray: Exact errors (in H1 norm) at each iteration
         
         Saved data:
         FEniCS solution saved to <filePath>.pvd
@@ -78,8 +78,8 @@ class nonlinearPDE1:
             solve(a == L, u, bcs)
             
             # calculate iterate difference and exact error in L2 norm
-            itErr = errornorm(u_k, u, 'L2')
-            exErr = errornorm(self.uExpr, u, 'L2')
+            itErr = errornorm(u_k, u, 'H1')
+            exErr = errornorm(self.uExpr, u, 'H1')
             
             iterDiffArray.append(itErr) # fill arrays with error data
             exactErrArray.append(exErr)    
@@ -115,8 +115,14 @@ class nonlinearPDE1:
         
         Outputs:
         u: solution to PDE
-        iterDiffArray: Differences between iterative solutions (in L2 norm) at each iteration
-        exactErrArray: Exact errors (in L2 norm) at each iteration ###why L2 norm and not H1?? explain/investigate
+        iterDiffArray: Differences between iterative solutions (in H1 norm) at each iteration
+        exactErrArray: Exact errors (in H1 norm) at each iteration
+        
+        Saved data:
+        FEniCS solution saved to <filePath>.pvd
+        Convergence data saved to <filePath>.csv:
+            column 0: iterate differences
+            column 1: exact errors
         """
         
         V = self.V
@@ -153,8 +159,8 @@ class nonlinearPDE1:
             u.vector()[:] = u_k.vector() + du.vector()
             
             # calculate iterate difference and exact error in L2 norm
-            itErr = errornorm(u_k, u, 'L2')
-            exErr = errornorm(self.uExpr, u, 'L2')
+            itErr = errornorm(u_k, u, 'H1')
+            exErr = errornorm(self.uExpr, u, 'H1')
             iterDiffArray.append(itErr) # fill arrays with error data
             exactErrArray.append(exErr)    
             
@@ -187,12 +193,12 @@ class nonlinearPDE1:
             plt.suptitle('Convergence data for PDE solution')
             
             plt.subplot(1,2,1)
-            plt.plot(self.newtonExactErr)
+            plt.semilogy(self.newtonExactErr)
             plt.ylabel('Newton exact error')
             plt.xlabel('iteration')
-            plt.subplot(1,2,2)
             
-            plt.plot(self.newtonIterDiff)
+            plt.subplot(1,2,2)
+            plt.semilogy(self.newtonIterDiff)
             plt.ylabel('Newton iterate difference')
             plt.xlabel('iteration')
         else:
@@ -202,12 +208,12 @@ class nonlinearPDE1:
             plt.suptitle('Convergence data for PDE solution')
             
             plt.subplot(1,2,1)
-            plt.plot(self.picardExactErr)
+            plt.semilogy(self.picardExactErr)
             plt.ylabel('Picard exact error')
             plt.xlabel('iteration')
             
             plt.subplot(1,2,2)
-            plt.plot(self.picardIterDiff)
+            plt.semilogy(self.picardIterDiff)
             plt.ylabel('Picard iterate difference')
             plt.xlabel('iteration')
         else:
