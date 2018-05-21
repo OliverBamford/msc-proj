@@ -12,19 +12,23 @@ class PDEConsOpt:
         p: order of function space
         """
         alpha = 1e-07
-        m = 1e-03
-        ud = Expression('sin(15*x[0] + cos(20*x[1]))')
         
-        mesh = UnitSquareMesh(N)
-        Z = VectorFunctionSpace(mesh, 'CG', p)
+        mesh = UnitSquareMesh(N,N)
+        Z = VectorFunctionSpace(mesh, 'CG', p, dim=3)
         z = Function(Z)
         (u, lmbd, m) = split(z)
         
-        ud.interpolate(Z)
+        bcs = [DirichletBC(Z.sub(0), 0, "on_boundary"),
+               DirichletBC(Z.sub(1), 0, "on_boundary")]
+        
+        dist = Expression('sin(15*x[0]) + cos(20*x[1])', degree=3)
+        ud = interpolate(dist, Z.sub(0).collapse)
         
         L = (0.5*inner(u-ud, u-ud)*dx
             + 0.5*alpha*inner(m, m)*dx
             + inner(grad(u), grad(lmbda))*dx
             - m*lmbda*dx)
-            
         
+        F = derivative(L, z, TestFunction(Z))
+         
+        solve(F == 0, z, bcs)
