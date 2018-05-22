@@ -52,20 +52,20 @@ class PDEConsOpt:
         lmbd = self.lmbd
         m = self.m
         ud = self.ud
-        
-        v = TestFunction(self.Z)
-        
+
         # construct lagrangian
         Lag = (0.5*inner(u_k-ud, u_k-ud)*dx
             + 0.5*alpha*inner(m, m)*dx
             + inner(grad(u_k), grad(lmbd))*dx
             - m*lmbd*dx)     
-        F = derivative(Lag, self.z, v)
-        FH = derivative(F, self.z, v)
-        # construct a == L for Newton iterations
+        GL = derivative(Lag, self.z, TestFunction(self.Z))
+        HL = derivative(GL, self.z, TestFunction(self.Z))
+        
+        # construct a == L for Newton iterations                
+        v = TestFunction(self.Z)
         du = TrialFunction(self.Z)
-        L = inner(FH, du)*v*dx
-        a = inner(F,v)*dx
+        L = inner(HL, du)*v*dx
+        a = inner(GL, v)*dx
         
         # construct initial guess (u = ud)
         u_k = ud
