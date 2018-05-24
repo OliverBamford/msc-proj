@@ -11,97 +11,98 @@ class PDEConsOpt:
         N: number of finite elements in mesh
         p: order of function space
         """
-        alpha = 1e-07
+        self.alpha = 1e-07
+
+        mesh = UnitSquareMesh(N,N)        
+        U = FunctionSpace(mesh, 'CG', p)
+        LMBD = FunctionSpace(mesh, 'CG', p)
+        M = FunctionSpace(mesh, 'CG', p)
+        u = Function(U)
+        lmbd = Function(LMBD)
+        m = Function(M)
         
-        mesh = UnitSquareMesh(N,N)
-        Z = VectorFunctionSpace(mesh, 'CG', p, dim=3)
-        z = Function(Z)
-        (u, lmbd, m) = split(z)
-        
-        self.bcs = [DirichletBC(Z.sub(0), 0, "on_boundary"),
-               DirichletBC(Z.sub(1), 0, "on_boundary")]
+        self.bcs = [DirichletBC(U, 0, "on_boundary"),
+               DirichletBC(LMBD, 0, "on_boundary")]
         
         dist = Expression('sin(15*x[0]) + cos(20*x[1])', degree=3)
-        ud = interpolate(dist, Z.sub(0).collapse())
+        # ud = interpolate(dist, Z.sub(0).collapse())
+        self.ud = interpolate(dist, U)
         
-        self.ud = ud
-        self.u = u
-        self.lmbd = lmbd
-        self.m = m
-        self.Z = Z
-        self.z = z        
+        self.u_k = u
+        self.lmbd_k = lmbd
+        self.m_k = m      
+        self.U = U
+        self.LMBD = LMBD
+        self.M = M
         
     def solveAuto(self):
         """
-        Solves problem using FEniCS automatic solver
+        Solves problem using FEniCS automatic solver (BROKEN)
         """
-        u = self.u
+        u = self.u_k
         ud = self.ud
-        m = self.m
-        lmbd = self.lmbd
+        m = self.m_k
+        lmbd = self.lmbd_k
         
         self.L = (0.5*inner(u-ud, u-ud)*dx
-                + 0.5*alpha*inner(m, m)*dx
+                + 0.5*self.alpha*inner(m, m)*dx
                 + inner(grad(u), grad(lmbd))*dx
                 - m*lmbd*dx)
+        
+        
         self.F = derivative(self.L, self.z, TestFunction(self.Z))
         solve(self.F == 0, self.z, self.bcs)
-    
-    def solveNewton(self, iterTol = 1.0e-5, maxIter = 25, dispOutput = False, writeData = True, filePath = 'solution-data/PDEOptNewton'):
-        u_k = self.u
-        lmbd = self.lmbd
-        m = self.m
+        
+    def solveSD(self, srch = 1, iterTol = 1.0e-5, maxIter = 25, dispOutput = False, writeData = True, filePath = 'solution-data/PDEOptSD'):
+        u_k = self.u_k
+        lmbd_k = self.lmbd_k
+        m_k = self.m_k
         ud = self.ud
-
-        # construct lagrangian
-        Lag = (0.5*inner(u_k-ud, u_k-ud)*dx
-            + 0.5*alpha*inner(m, m)*dx
-            + inner(grad(u_k), grad(lmbd))*dx
-            - m*lmbd*dx)     
-        GL = derivative(Lag, self.z, TestFunction(self.Z))
-        HL = derivative(GL, self.z, TestFunction(self.Z))
+        U = self.U
+        LMBD = self.LMBD
+        M = self.M
         
-        # construct a == L for Newton iterations                
-        v = TestFunction(self.Z)
-        du = TrialFunction(self.Z)
-        L = inner(HL, du)*v*dx
-        a = inner(GL, v)*dx
-        
-        # construct initial guess (u = ud)
-        u_k = ud
-        
-        du = Function(V)
-        u = Function(V)
-        itErr = 1.0
+        # find Riesz-rep of dJ (GJ)
+        itErr = 1.0           # error measure ||u-u_k||
         iterDiffArray = []
-        exactErrArray = []
+        exactErrArray = []   
         iter = 0
+        
+        u_k = ud # initial guesses
+        lmbd = interpolate(Constant(1.0), LMBD)
+        m_k = interpolate(Constant(1.0), M) 
+        
+        # begin steepest descent
         while itErr > iterTol and iter < maxIter:
             iter += 1
             
-            solve(a == L, du, self.bcs)
-            u.vector()[:] = u_k.vector() + du.vector()
+            # find the Riesz rep. of dJ 
+            GJ = TrialFunction(M)
+            v = TestFunction(M)
+            a = GJ*v*dx
+            L = (self.alpha*m_k - lmbd_k)*v*dx
+            GJ = Function(M)
+            solve(a == L, GJ)
+            # update m
+            m_k.assign(m_k - srch*GJ)
             
-            # calculate iterate difference and exact error in H1 norm
-            itErr = errornorm(u_k, u, 'H1')
-            # exErr = errornorm(self.uExpr, u, 'H1')
-            iterDiffArray.append(itErr) # fill arrays with error data
-            exactErrArray.append(exErr)    
-            
-            if dispOutput:
-                print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + ', exact error = ' + str(exErr))
+            # update u
+            u = TrialFunction(U)
+            v = TestFunction(U)
+            State = inner(grad(v),grad(u))*dx
+            L = -m_k*v*dx
+            u = Function(U)
+            solve(State == L, u, self.bcs[0])
             u_k.assign(u)
-        
-        if writeData:
-            # save solution
-            solution = File(filePath + '.pvd')
-            solution << u_k
-            # save convergence data
-            convergenceData = [iterDiffArray, exactErrArray]
-            np.savetxt(filePath + '.csv', convergenceData)
             
-        # save data to object
-        self.newtonSol = u_k
-        self.newtonIterDiff = iterDiffArray
-        self.newtonExactErr = exactErrArray  
-        return [u_k, iterDiffArray, exactErrArray]               
+            # update lambda
+            lmbd = TrialFunction(LMBD)
+            v = TestFunction(LMBD)
+            Adj = inner(grad(v),grad(lmbd))*v*dx
+            L = -(u_k-ud)*v*dx
+            lmbd = Function(LMBD)
+            solve(Adj == L, lmbd, self.bcs[1])
+            lmbd_k.assign(lmbd)
+            
+            
+    
