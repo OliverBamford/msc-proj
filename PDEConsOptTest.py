@@ -61,11 +61,6 @@ while itErr > 1e-06 and iter < 25:
     print 'u-diff = ' + str(uDiff)  + ' | u-norm = ' + str(uNorm)
     u_k.assign(u)
     
-    du = Function(U)
-    du.assign(u_k-ud)
-    J = 0.5*norm(du, 'L2')**2 - 0.5*alpha*norm(m_k, 'L2')**2
-    nGJ = norm(GJ, 'L2')
-    print 'J = ' + str(J) + '|  ||grad(J)|| = ' + str(nGJ)
     
     # find the Riesz rep. of dJ 
     GJ = TrialFunction(M)
@@ -81,4 +76,8 @@ while itErr > 1e-06 and iter < 25:
     print 'm-diff = ' + str(mDiff)  + ' | m-norm = ' + str(mNorm)
     m_k.assign(m)
     
-    
+    du = Function(U)
+    du.assign(u_k-ud)
+    J = 0.5*norm(du, 'L2')**2 - 0.5*alpha*norm(m_k, 'L2')**2
+    nGJ = norm(GJ, 'L2')
+    print 'J = ' + str(J) + '|  ||grad(J)|| = ' + str(nGJ)
