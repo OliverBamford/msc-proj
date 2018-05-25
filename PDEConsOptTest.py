@@ -40,15 +40,6 @@ m = Function(M)
 while itErr > 1e-06 and iter < 25:
     iter += 1
     
-    # find lambda that satisfies adjoint equation
-    lmbd = TrialFunction(LMBD)
-    v = TestFunction(LMBD)
-    Adj = inner(grad(v),grad(lmbd))*dx
-    L = -(u_k-ud)*v*dx
-    lmbd = Function(LMBD)
-    solve(Adj == L, lmbd, bcs[1])
-    lmbd_k.assign(lmbd)
-    
     # find u which satisfies state equation
     u = TrialFunction(U)
     v = TestFunction(U)
@@ -56,11 +47,19 @@ while itErr > 1e-06 and iter < 25:
     L = -m_k*v*dx
     u = Function(U)
     solve(State == L, u, bcs[0])
-    uNorm = errornorm(u, interpolate(Constant(0.0), U), 'H1')
+    uNorm = norm(u, 'H1')
     uDiff = errornorm(u_k, u, 'H1')
     print 'u-diff = ' + str(uDiff)  + ' | u-norm = ' + str(uNorm)
     u_k.assign(u)
     
+    # find lambda that satisfies adjoint equation
+    lmbd = TrialFunction(LMBD)
+    v = TestFunction(LMBD)
+    Adj = inner(grad(v),grad(lmbd))*dx
+    L = -(u_k-ud)*v*dx
+    lmbd = Function(LMBD)
+    solve(Adj == L, lmbd, bcs[1])
+    lmbd_k.assign(lmbd) 
     
     # find the Riesz rep. of dJ 
     GJ = TrialFunction(M)
@@ -71,7 +70,7 @@ while itErr > 1e-06 and iter < 25:
     solve(a == L, GJ)
     # update m using steepest descent
     m.assign(m_k - srch*GJ)
-    mNorm = errornorm(m, interpolate(Constant(0.0), M), 'H1')
+    mNorm = norm(m, 'H1')
     mDiff = errornorm(m_k, m, 'H1')
     print 'm-diff = ' + str(mDiff)  + ' | m-norm = ' + str(mNorm)
     m_k.assign(m)
