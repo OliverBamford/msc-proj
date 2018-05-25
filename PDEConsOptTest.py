@@ -4,8 +4,7 @@ import numpy as np
 
 N = 100
 p = 1
-
-alpha = 0.001
+alpha = 1e-07
 
 mesh = UnitSquareMesh(N,N)
 Z = VectorFunctionSpace(mesh, 'CG', p, dim=3)
@@ -30,18 +29,27 @@ itErr = 1.0  # error measure ||u-u_k||
 iterDiffArray = []
 exactErrArray = []   
 iter = 0
-srch = 1
+srch = 1 # step size
 
 u_k.assign(ud) # initial guesses
-lmbd_k = interpolate(Constant(0.0), LMBD)
-m_k = interpolate(Constant(0.0), M) 
+lmbd_k = interpolate(Constant(1.0), LMBD)
+m_k = interpolate(Constant(1.0), M) 
 
 m = Function(M)
 # begin steepest descent
-while itErr > 1e-06 and iter < 5:
+while itErr > 1e-06 and iter < 25:
     iter += 1
     
-    # find u which satisfies PDE constraint (state equation)
+    # find lambda that satisfies adjoint equation
+    lmbd = TrialFunction(LMBD)
+    v = TestFunction(LMBD)
+    Adj = inner(grad(v),grad(lmbd))*dx
+    L = -(u_k-ud)*v*dx
+    lmbd = Function(LMBD)
+    solve(Adj == L, lmbd, bcs[1])
+    lmbd_k.assign(lmbd)
+    
+    # find u which satisfies state equation
     u = TrialFunction(U)
     v = TestFunction(U)
     State = inner(grad(v),grad(u))*dx
@@ -53,14 +61,11 @@ while itErr > 1e-06 and iter < 5:
     print 'u-diff = ' + str(uDiff)  + ' | u-norm = ' + str(uNorm)
     u_k.assign(u)
     
-    # update lambda from adjoint equation
-    lmbd = TrialFunction(LMBD)
-    v = TestFunction(LMBD)
-    Adj = inner(grad(v),grad(lmbd))*dx
-    L = -(u_k-ud)*v*dx
-    lmbd = Function(LMBD)
-    solve(Adj == L, lmbd, bcs[1])
-    lmbd_k.assign(lmbd)
+    du = Function(U)
+    du.assign(u_k-ud)
+    J = 0.5*norm(du, 'L2')**2 - 0.5*alpha*norm(m_k, 'L2')**2
+    nGJ = norm(GJ, 'L2')
+    print 'J = ' + str(J) + '|  ||grad(J)|| = ' + str(nGJ)
     
     # find the Riesz rep. of dJ 
     GJ = TrialFunction(M)
@@ -75,4 +80,5 @@ while itErr > 1e-06 and iter < 5:
     mDiff = errornorm(m_k, m, 'H1')
     print 'm-diff = ' + str(mDiff)  + ' | m-norm = ' + str(mNorm)
     m_k.assign(m)
+    
     
