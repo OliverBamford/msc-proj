@@ -29,7 +29,7 @@ itErr = 1.0  # error measure ||u-u_k||
 iterDiffArray = []
 exactErrArray = []   
 iter = 0
-srch = 1 # step size
+srch = 100 # step size
 
 u_k.assign(ud) # initial guesses
 lmbd_k = interpolate(Constant(1.0), LMBD)
@@ -37,7 +37,7 @@ m_k = interpolate(Constant(1.0), M)
 
 m = Function(M)
 # begin steepest descent
-while itErr > 1e-06 and iter < 25:
+while itErr > 1e-06 and iter < 2500:
     iter += 1
     
     # find u which satisfies state equation
@@ -65,18 +65,32 @@ while itErr > 1e-06 and iter < 25:
     GJ = TrialFunction(M)
     v = TestFunction(M)
     a = GJ*v*dx
-    L = (alpha*m_k - lmbd_k)*v*dx
+    L = -(alpha*m_k - lmbd_k)*v*dx
     GJ = Function(M)
     solve(a == L, GJ)
-    # update m using steepest descent
-    m.assign(m_k - srch*GJ)
-    mNorm = norm(m, 'H1')
-    mDiff = errornorm(m_k, m, 'H1')
-    print 'm-diff = ' + str(mDiff)  + ' | m-norm = ' + str(mNorm)
-    m_k.assign(m)
     
     du = Function(U)
     du.assign(u_k-ud)
+    J = 0.5*norm(du, 'L2')**2 - 0.5*alpha*norm(m_k, 'L2')**2
+    m.assign(m_k - srch*GJ)
+    Jk = 0.5*norm(du, 'L2')**2 - 0.5*alpha*norm(m, 'L2')**2
+    
+    # Frechet derivative of J at point m_k in direction GJ, used for b-Armijo
+    # integrand = -(alpha*m_k - lmbd_k)*GJ*dx
+    
+    # find step-size
+    while Jk > 0.9999*J: # ensure 1% decrease (temporary until I can implement b-Armijo)
+        srch = 0.9*srch
+        m.assign(m_k - srch*GJ)
+        Jk = 0.5*norm(du, 'L2')**2 - 0.5*alpha*norm(m, 'L2')**2
+        print 'Step-size set to: ' + str(srch)
+    
+    mNorm = norm(m, 'H1')
+    mDiff = errornorm(m_k, m, 'H1')
+    print 'm-diff = ' + str(mDiff)  + ' | m-norm = ' + str(mNorm)
+    # update m using steepest descent
+    m_k.assign(m)
+
     J = 0.5*norm(du, 'L2')**2 - 0.5*alpha*norm(m_k, 'L2')**2
     nGJ = norm(GJ, 'L2')
     print 'J = ' + str(J) + '|  ||grad(J)|| = ' + str(nGJ)
