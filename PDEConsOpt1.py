@@ -5,34 +5,18 @@ import numpy as np
 class PDEConsOpt:
     def __init__(self, N, p, ud = Expression('sin(pi*x[0])*sin(pi*x[1])', degree=3), alpha = 1e-07):
         """
-        Sets up the PDE-constrained optimisation problem with Lagrangian L
+        Sets up the 'hello world' PDE-constrained optimisation problem
         
         Inputs:
         N: number of finite elements in mesh
         p: order of function space
+        ud: Desired distribution (UFL expression)
+        alpha: regularisation parameter
         """
         self.N = N
         self.p = p
         self.ud = ud
         self.alpha = alpha
-        
-    def solveAuto(self):
-        """
-        Solves problem using FEniCS automatic solver (BROKEN)
-        """
-        u = self.u_k
-        ud = self.ud
-        m = self.m_k
-        lmbd = self.lmbd_k
-        
-        self.L = (0.5*inner(u-ud, u-ud)*dx
-                + 0.5*self.alpha*inner(m, m)*dx
-                + inner(grad(u), grad(lmbd))*dx
-                - m*lmbd*dx)
-        
-        
-        self.F = derivative(self.L, self.z, TestFunction(self.Z))
-        solve(self.F == 0, self.z, self.bcs)
         
     def solveSD(self, srch = 100, iterTol = 1.0e-5, maxIter = 25, dispOutput = False, writeData = False, filePath = 'solution-data/PDEOptSD'):
         """
