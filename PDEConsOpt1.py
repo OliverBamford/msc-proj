@@ -42,7 +42,9 @@ class PDEConsOpt:
         lmbd saved to <filePath>_lmbd.pvd
         Convergence data saved to <filePath>.csv:
             column 0: iterate differences
-        """        
+        """
+        alpha = self.alpha
+        
         mesh = UnitSquareMesh(self.N, self.N)
         Z = VectorFunctionSpace(mesh, 'CG', self.p, dim=3)
         
@@ -58,7 +60,9 @@ class PDEConsOpt:
                
         ud = interpolate(self.ud, U)
         
-        mDiffArray = [] 
+        mDiffArray = [1e99] 
+        J = [1e99]
+        nGJ = [1e99]
         iter = 0
         
         # initial guesses
@@ -93,25 +97,26 @@ class PDEConsOpt:
             GJ = TrialFunction(M)
             v = TestFunction(M)
             a = GJ*v*dx
-            L = -(self.alpha*m_k - lmbd_k)*v*dx
+            L = -(alpha*m_k - lmbd_k)*v*dx #TODO: explain minus sign
             GJ = Function(M)
-            solve(a == L, GJ)
+            solve(a == L, GJ)            
             
             du = Function(U)
             du.assign(u_k-ud)
-            J = 0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m_k, 'L2')**2 # current J value
+            ndu = 0.5*norm(du, 'L2')**2
+            #J = 0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m_k, 'L2')**2 # current J value
             m.assign(m_k - srch*GJ) # trial m iterate
-            Jk = 0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m, 'L2')**2 # trial J value
+            Jk = ndu + 0.5*alpha*norm(m, 'L2')**2 # trial J value
             
             # Frechet derivative of J at point m_k in direction GJ, used for b-Armijo
             # integrand = -alpha*m_k*GJ*dx
             # armijo = -alpha*inner(m_k,GJ)
             
             # begin line-search
-            while Jk > J and srch > 1e-20: # ensure decrease (temporary until I can implement b-Armijo)
+            while Jk > J[-1] and srch > 1e-20: #TODO: impose Armijo condition here
                 srch = 0.5*srch
                 m.assign(m_k - srch*GJ)
-                Jk = 0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m, 'L2')**2
+                Jk = ndu + 0.5*alpha*norm(m, 'L2')**2
                 print 'Step-size set to: ' + str(srch)
                 
             if srch < 1e-20:
@@ -125,11 +130,11 @@ class PDEConsOpt:
                 # update m_k
                 m_k.assign(m)
                 
-                
+                J.append(Jk)
+                nGJ.append(norm(GJ, 'L2'))
                 if dispOutput:
                     print 'm-diff = ' + str(mDiff)  + ' | m-norm = ' + str(mNorm)
-                    nGJ = norm(GJ, 'L2')
-                    print 'J = ' + str(Jk) + '|  ||grad(J)|| = ' + str(nGJ)
+                    print 'J = ' + str(Jk) + '|  ||grad(J)|| = ' + str(nGJ[-1])
                     
         # update u and lambda using final m value
         u = TrialFunction(U)
@@ -148,10 +153,9 @@ class PDEConsOpt:
         solve(Adj == L, lmbd, bcs[1])
         lmbd_k.assign(lmbd) 
         
-        du = Function(U)
         du.assign(u_k-ud)
-        J = 0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m_k, 'L2')**2
-        print 'Iterations terminated with J = ' + str(J) + ' and dJ = ' + str(nGJ)
+        J.append(0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m_k, 'L2')**2)
+        print 'Iterations terminated with J = ' + str(J[-1]) + ' and dJ = ' + str(nGJ[-1])
         
         if writeData:
             # save solution
@@ -164,5 +168,8 @@ class PDEConsOpt:
             # save convergence data
             convergenceData = mDiffArray
             np.savetxt(filePath + '.csv', convergenceData)
-            
-        return u_k, m_k, lmbd_k, mDiffArray
+        
+        mDiffArray.pop(0)
+        J.pop(0)
+        nGJ.pop(0)
+        return u_k, m_k, lmbd_k, mDiffArray, J, nGJ

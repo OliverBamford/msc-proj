@@ -4,12 +4,10 @@ import numpy as np
 
 N = 100
 p = 1
-alpha = 1e-06
+alpha = 1e-07
 
-mesh = UnitSquareMesh(N,N)
+mesh = UnitSquareMesh(N, N)
 Z = VectorFunctionSpace(mesh, 'CG', p, dim=3)
-z = Function(Z)
-#(u_k, lmbd_k, m_k) = split(z)
 
 U = Z.sub(0).collapse()
 LMBD = Z.sub(1).collapse()
@@ -21,27 +19,25 @@ m_k = Function(M)
 bcs = [DirichletBC(U, 0, "on_boundary"),
        DirichletBC(LMBD, 0, "on_boundary")]
 
-#dist = Expression('x[0]*x[1]*(x[0] - 1)*(x[1] - 1)', degree=3)
-#dist = Expression('sin(pi*x[0])*sin(pi*x[1])', degree=3)
-dist = Expression('x[0]*x[0] + x[1]', degree=3)
-# ud = interpolate(dist, Z.sub(0).collapse())
-ud = interpolate(dist, U)
+ud = interpolate(Expression('sin(pi*x[0])*sin(pi*x[1])', degree=3) , U)
 
-itErr = 1.0  # error measure ||u-u_k||
-mDiffArray = []
-exactErrArray = []   
+mDiffArray = [1e99] 
+J = [1e99]
+nGJ = [1e99]
 iter = 0
-srch = 100 # step size
 
 # initial guesses
 lmbd_k = interpolate(Constant(1.0), LMBD)
 m_k = interpolate(Constant(1.0), M) 
 
 m = Function(M)
-maxIter = 25
 mDiff = 1.0
+
+iterTol = 1e-05
+maxIter = 25
+srch = 500
 # begin steepest descent
-while mDiff > 1e-06 and iter < maxIter:
+while mDiff > iterTol and iter < maxIter:
     iter += 1
     
     # find u which satisfies state equation
@@ -66,26 +62,27 @@ while mDiff > 1e-06 and iter < maxIter:
     GJ = TrialFunction(M)
     v = TestFunction(M)
     a = GJ*v*dx
-    L = -(alpha*m_k - lmbd_k)*v*dx
+    L = -(alpha*m_k - lmbd_k)*v*dx #TODO: explain minus sign
     GJ = Function(M)
     solve(a == L, GJ)
     
     du = Function(U)
     du.assign(u_k-ud)
-    J = 0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m_k, 'L2')**2 # current J value
+    ndu = 0.5*norm(du, 'L2')**2
     m.assign(m_k - srch*GJ) # trial m iterate
-    Jk = 0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m, 'L2')**2 # trial J value
+    Jk = ndu + 0.5*alpha*norm(m, 'L2')**2 # objective value with trial iterate
     
     # Frechet derivative of J at point m_k in direction GJ, used for b-Armijo
     # integrand = -alpha*m_k*GJ*dx
     # armijo = -alpha*inner(m_k,GJ)
     
-    # find step-size
-    while Jk > J and srch > 1e-20: # ensure decrease (temporary until I can implement b-Armijo)
+    # begin line-search
+    while Jk > J[-1] and srch > 1e-20: #TODO: impose Armijo condition here
         srch = 0.5*srch
         m.assign(m_k - srch*GJ)
-        Jk = 0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m, 'L2')**2
+        Jk = ndu + 0.5*alpha*norm(m, 'L2')**2
         print 'Step-size set to: ' + str(srch)
+        
     if srch < 1e-20:
         print 'Step-size below threshold, possible minimum found.'
         iter = maxIter
@@ -93,12 +90,16 @@ while mDiff > 1e-06 and iter < maxIter:
         mNorm = norm(m, 'H1')
         mDiff = errornorm(m_k, m, 'H1')
         mDiffArray.append(mDiff)
-        print 'm-diff = ' + str(mDiff)  + ' | m-norm = ' + str(mNorm)    
+    
         # update m_k
         m_k.assign(m)
-        nGJ = norm(GJ, 'L2')
-        print 'J = ' + str(Jk) + '|  ||grad(J)|| = ' + str(nGJ)
-
+        
+        J.append(Jk)
+        nGJ.append(norm(GJ, 'L2'))
+        
+        print 'm-diff = ' + str(mDiff)  + ' | m-norm = ' + str(mNorm)
+        print 'J = ' + str(Jk) + '|  ||grad(J)|| = ' + str(nGJ[-1])
+            
 # update u and lambda using final m value
 u = TrialFunction(U)
 v = TestFunction(U)
@@ -118,5 +119,9 @@ lmbd_k.assign(lmbd)
 
 du = Function(U)
 du.assign(u_k-ud)
-J = 0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m_k, 'L2')**2
-print 'Iterations terminated with J = ' + str(J) + ' and dJ = ' + str(nGJ)
+J.append(0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m_k, 'L2')**2)
+print 'Iterations terminated with J = ' + str(J[-1]) + ' and dJ = ' + str(nGJ[-1])
+
+mDiffArray.pop(0)
+J.pop(0)
+nGJ.pop(0)
