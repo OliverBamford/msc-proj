@@ -44,7 +44,7 @@ while mDiff > iterTol and iter < maxIter:
     u = TrialFunction(U)
     v = TestFunction(U)
     State = inner(grad(v),grad(u))*dx
-    L = -m_k*v*dx
+    L = m_k*v*dx
     u = Function(U)
     solve(State == L, u, bcs[0])
     u_k.assign(u)
@@ -62,7 +62,7 @@ while mDiff > iterTol and iter < maxIter:
     GJ = TrialFunction(M)
     v = TestFunction(M)
     a = GJ*v*dx
-    L = -(alpha*m_k - lmbd_k)*v*dx #TODO: explain minus sign
+    L = (alpha*m_k - lmbd_k)*v*dx #TODO: explain minus sign
     GJ = Function(M)
     solve(a == L, GJ)
     
