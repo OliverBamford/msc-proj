@@ -121,6 +121,15 @@ for N in [100]:
     solve(Adj == L, lmbd, bcs[1])
     lmbd_k.assign(lmbd) 
     
+
+    # find the Riesz rep. of dJ 
+    GJ = TrialFunction(M)
+    v = TestFunction(M)
+    a = GJ*v*dx
+    L = (alpha*m_k - lmbd_k)*v*dx 
+    GJ = Function(M)
+    solve(a == L, GJ)
+    
     du = Function(U)
     
     du.assign(u_k-ud)
@@ -138,11 +147,12 @@ for N in [100]:
 
 plt.figure(1)
 plt.plot(mDiffArray, label='$||m_{k+1} - m_k||$')
-plt.semilogy(ndu, label='$||u_{k+1} - u_k||$')
+plt.semilogy(ndu, label='$||u_{k+1} - u_d||$')
 plt.semilogy(J, label='$J$')
 plt.semilogy(nGJ, label='$R(dJ)$')
 plt.title('Convergence of Steepest-Descent Iterations on "hello world!" PDECO Problem (N = 100, p = 1)')
 plt.legend()
+
 
 plt.figure(2)
 plt.subplot(2,2,1)
@@ -158,3 +168,4 @@ plt.subplot(2,2,4)
 plt.title('$\lambda_k$')
 plot(lmbd_k)
 plt.suptitle('Solution to "hello world!" PDECO Problem After 25 SD Iterations (N = 100, p = 1)')
+
