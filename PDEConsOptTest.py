@@ -11,32 +11,29 @@ finalJ = []
 for N in [100]:
     print str(N)
     mesh = UnitSquareMesh(N, N)
-    Z = VectorFunctionSpace(mesh, 'CG', p, dim=3)
+    V = FunctionSpace(mesh, 'CG', p)
     
-    U = Z.sub(0).collapse()
-    LMBD = Z.sub(1).collapse()
-    M = Z.sub(2).collapse()
-    u_k = Function(U)
-    lmbd_k = Function(LMBD)
-    m_k = Function(M)
+    u_k = Function(V)
+    lmbd_k = Function(V)
+    m_k = Function(V)
     
-    bcs = [DirichletBC(U, 0, "on_boundary"),
-           DirichletBC(LMBD, 0, "on_boundary")]
+    bcs = DirichletBC(V, 0, "on_boundary")
+
     
-    ud = interpolate(Expression('sin(pi*x[0])*sin(pi*x[1])', degree=3) , U)
+    ud = interpolate(Expression('sin(pi*x[0])*sin(pi*x[1])', degree=3) , V)
     
     # initialise arrays to store convergence data, these initial values will be removed
-    mDiffArray = [1e99] 
+    mDiffArray = [1e99]
     J = [1e99]
     nGJ = [1e99]
     ndu= [1e99]
     iter = 0
     
     # initial guesses
-    lmbd_k = interpolate(Constant(1.0), LMBD)
-    m_k = interpolate(Constant(1.0), M) 
+    lmbd_k = interpolate(Constant(1.0), V)
+    m_k = interpolate(Constant(1.0), V)
+    m = Function(V)
     
-    m = Function(M)
     mDiff = 1.0
     iterTol = 1e-05
     maxIter = 10
@@ -46,32 +43,28 @@ for N in [100]:
         iter += 1
         
         # find u which satisfies state equation
-        u = TrialFunction(U)
-        v = TestFunction(U)
+        u = TrialFunction(V)
+        v = TestFunction(V)
         State = inner(grad(v),grad(u))*dx
         L = m_k*v*dx
-        u = Function(U)
-        solve(State == L, u, bcs[0])
-        u_k.assign(u)
+        solve(State == L, u_k, bcs)
         
         # find lambda that satisfies adjoint equation
-        lmbd = TrialFunction(LMBD)
-        v = TestFunction(LMBD)
+        lmbd = TrialFunction(V)
+        v = TestFunction(V)
         Adj = inner(grad(v),grad(lmbd))*dx
         L = -(u_k-ud)*v*dx
-        lmbd = Function(LMBD)
-        solve(Adj == L, lmbd, bcs[1])
-        lmbd_k.assign(lmbd) 
-        
+        solve(Adj == L, lmbd_k, bcs)
+
         # find the Riesz rep. of dJ 
-        GJ = TrialFunction(M)
-        v = TestFunction(M)
+        GJ = TrialFunction(V)
+        v = TestFunction(V)
         a = GJ*v*dx
         L = (alpha*m_k - lmbd_k)*v*dx
-        GJ = Function(M)
+        GJ = Function(V)
         solve(a == L, GJ)
         
-        du = Function(U)
+        du = Function(V)
         du.assign(u_k-ud)
         ndu.append(0.5*norm(du, 'L2')**2)
         m.assign(m_k - srch*GJ) # trial m iterate
@@ -105,32 +98,27 @@ for N in [100]:
             print 'J = ' + str(Jk) + '|  ||grad(J)|| = ' + str(nGJ[-1])
                 
     # update u and lambda using final m value
-    u = TrialFunction(U)
-    v = TestFunction(U)
+    u = TrialFunction(V)
+    v = TestFunction(V)
     State = inner(grad(v),grad(u))*dx
     L = m_k*v*dx
-    u = Function(U)
-    solve(State == L, u, bcs[0])
-    u_k.assign(u)
+    solve(State == L, u_k, bcs)
     
-    lmbd = TrialFunction(LMBD)
-    v = TestFunction(LMBD)
+    lmbd = TrialFunction(V)
+    v = TestFunction(V)
     Adj = inner(grad(v),grad(lmbd))*dx
     L = -(u_k-ud)*v*dx
-    lmbd = Function(LMBD)
-    solve(Adj == L, lmbd, bcs[1])
-    lmbd_k.assign(lmbd) 
+    solve(Adj == L, lmbd_k, bcs)
     
-
     # find the Riesz rep. of dJ 
-    GJ = TrialFunction(M)
-    v = TestFunction(M)
+    GJ = TrialFunction(V)
+    v = TestFunction(V)
     a = GJ*v*dx
     L = (alpha*m_k - lmbd_k)*v*dx 
-    GJ = Function(M)
+    GJ = Function(V)
     solve(a == L, GJ)
     
-    du = Function(U)
+    du = Function(V)
     
     du.assign(u_k-ud)
     J.append(0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m_k, 'L2')**2)

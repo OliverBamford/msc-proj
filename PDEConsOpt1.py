@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 class PDEConsOpt:
-    def __init__(self, N, p, ud = Expression('sin(pi*x[0])*sin(pi*x[1])', degree=3), alpha = 1e-07):
+    def __init__(self, N, p, ue = Expression('sin(pi*x[0])*sin(pi*x[1])', degree=3), alpha = 1e-07):
         """
         Sets up the 'hello world' PDE-constrained optimisation problem
         
@@ -13,18 +13,67 @@ class PDEConsOpt:
         ud: Desired distribution (UFL expression)
         alpha: regularisation parameter
         """
+        
+        # set up problem (parts common to all iterative methods)
+        mesh = UnitSquareMesh(N, N)
+        V = FunctionSpace(mesh, 'CG', p)
+        bcs = DirichletBC(V, 0, "on_boundary")
+        # interpolate ud over function space
+        ud = interpolate(ue , V)
+        # initialise problem variables
+        u = TrialFunction(V)
+        lmbd = TrialFunction(V)
+        GJ = TrialFunction(V)
+        v = TestFunction(V)
+        
         self.N = N
         self.p = p
+        self.ue=ue
         self.ud = ud
         self.alpha = alpha
+        self.mesh = mesh
+        self.V = V
+        self.bcs = bcs
+        self.u = u
+        self.lmbd = lmbd
+        self.GJ = GJ
+        self.v = v
+    def solveMonolithic(self):
+        # construct mixed function space
+        mesh = self.mesh
+        alpha = self.alpha
+        ue = self.ue
         
-    def solveSD(self, srch = 100, iterTol = 1.0e-5, maxIter = 25, dispOutput = False, writeData = False, filePath = 'solution-data/PDEOptSD'):
+        P2 = VectorElement("Lagrange", mesh.ufl_cell(), dim=2,degree=2)
+        P1 = FiniteElement("Lagrange", mesh.ufl_cell(), degree=1)
+        TH = P2*P1
+        H = FunctionSpace(mesh, TH)
+        U = TrialFunction(H)
+        ul,m = split(U)
+        u, lmbd = split(ul)
+        phi,psi,chi = TestFunction(H)
+        ud = interpolate(ue , H.sub(0).sub(0).collapse()) # interpolate over u-space
+        
+        A = assemble(inner(grad(u), grad(phi))*dx) # assemble mass matrix for u,lmbd
+        M = assemble(inner(grad(m), grad(chi))*dx) # assemble mass matrux for m
+        mu = assemble(inner(ud, phi)*dx) # assemble RHS (for adj. equation)
+        
+#        F = (inner(u,phi)-m*phi)*dx + (inner(lmbd, psi) + (u-ud)*psi)*dx + (alpha*m - lmbd)*chi*dx
+#        a = (inner(u,phi)-m*phi)*dx + (inner(lmbd, psi) + u*psi)*dx + (alpha*m - lmbd)*chi*dx
+#        L = ud*psi*dx
+        
+        U = Function(H)
+        solve(F == 0, U, solver_parameters={"linear_solver": "lu"})
+        
+        return u, lmbd, m
+    def solveSD(self, srch = 100, iterTol = 1.0e-6, maxIter = 25,  
+                        dispOutput = False, writeData = False, filePath = 'solution-data/PDEOptSD'):
         """
         Solves the PDE-constrained opt. problem using steepest descent (SD)
         
         Inputs:
-        srch: initial SD step-size
-        iterTol: Iterations stop when |m_(k) - m_(k-1)| < iterTol. Default: 1e-5
+        srch: initial SD step-size (will be reduced to satisfy Armijo condition)
+        iterTol: Iterations stop when J < iterTol. Default: 1e-6
         maxIter: Maximum number of iterations
         dispOutput(bool): display iteration differences and objective values at each iteration
         writeData(True/False): write solution and convergence data to files
@@ -33,8 +82,10 @@ class PDEConsOpt:
         Outputs:
         u: optimal state function
         m: optimal control function
-        lmbd: lagrange multiplier
-        mDiffArray: Differences between iterative solutions (in H1 norm) at each iteration
+        lmbd: Lagrange multiplier
+        mDiffArray: differences between iterative solutions (in H1 norm) at each iteration
+        J: objective value at each iteration
+        nGJ: H1 norm of Riesz rep. of dJ at each iteration (SD direction)
         
         Saved data:
         u saved to <filePath>_u.pvd
@@ -43,84 +94,69 @@ class PDEConsOpt:
         Convergence data saved to <filePath>.csv:
             column 0: iterate differences
         """
+        N = self.N
+        p = self.p
+        ud = self.ud
         alpha = self.alpha
+        mesh = self.mesh
+        V = self.V
+        bcs = self.bcs
+        u = self.u
+        lmbd = self.lmbd
+        GJ = self.GJ
+        v = self.v
         
-        mesh = UnitSquareMesh(self.N, self.N)
-        Z = VectorFunctionSpace(mesh, 'CG', self.p, dim=3)
-        
-        U = Z.sub(0).collapse()
-        LMBD = Z.sub(1).collapse()
-        M = Z.sub(2).collapse()
-        u_k = Function(U)
-        lmbd_k = Function(LMBD)
-        m_k = Function(M)
-        
-        bcs = [DirichletBC(U, 0, "on_boundary"),
-               DirichletBC(LMBD, 0, "on_boundary")]
-               
-        ud = interpolate(self.ud, U)
-        
-        mDiffArray = [1e99] 
+        # initialise arrays to store convergence data, these initial values will be removed
+        mDiffArray = [1e99]
         J = [1e99]
         nGJ = [1e99]
+        ndu= [1e99]
         iter = 0
         
         # initial guesses
-        lmbd_k = interpolate(Constant(1.0), LMBD)
-        m_k = interpolate(Constant(1.0), M) 
-        
-        m = Function(M)
-        mDiff = 1.0
+        lmbd_k = interpolate(Constant(1.0), V)
+        m_k = interpolate(Constant(1.0), V)
+        # initialise functions
+        u_k = Function(V)
+        GJ_k = Function(V)
+        m = Function(V)
+        du = Function(V)
         # begin steepest descent
-        while mDiff > iterTol and iter < maxIter:
+        while J[-1] > iterTol and iter < maxIter:
             iter += 1
             
             # find u which satisfies state equation
-            u = TrialFunction(U)
-            v = TestFunction(U)
             State = inner(grad(v),grad(u))*dx
-            L = -m_k*v*dx
-            u = Function(U)
-            solve(State == L, u, bcs[0])
-            u_k.assign(u)
+            L = m_k*v*dx
+            solve(State == L, u_k, bcs)
             
             # find lambda that satisfies adjoint equation
-            lmbd = TrialFunction(LMBD)
-            v = TestFunction(LMBD)
             Adj = inner(grad(v),grad(lmbd))*dx
             L = -(u_k-ud)*v*dx
-            lmbd = Function(LMBD)
-            solve(Adj == L, lmbd, bcs[1])
-            lmbd_k.assign(lmbd) 
-            
+            solve(Adj == L, lmbd_k, bcs)
+    
             # find the Riesz rep. of dJ 
-            GJ = TrialFunction(M)
-            v = TestFunction(M)
             a = GJ*v*dx
-            L = -(alpha*m_k - lmbd_k)*v*dx #TODO: explain minus sign
-            GJ = Function(M)
-            solve(a == L, GJ)            
+            L = (alpha*m_k - lmbd_k)*v*dx
+            solve(a == L, GJ_k)
             
-            du = Function(U)
             du.assign(u_k-ud)
-            ndu = 0.5*norm(du, 'L2')**2
-            #J = 0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m_k, 'L2')**2 # current J value
-            m.assign(m_k - srch*GJ) # trial m iterate
-            Jk = ndu + 0.5*alpha*norm(m, 'L2')**2 # trial J value
+            ndu.append(0.5*norm(du, 'L2')**2)
+            m.assign(m_k - srch*GJ_k) # trial m iterate
+            Jk = ndu[-1] + 0.5*alpha*norm(m, 'L2')**2 # objective value with trial iterate
             
             # Frechet derivative of J at point m_k in direction GJ, used for b-Armijo
-            # integrand = -alpha*m_k*GJ*dx
-            # armijo = -alpha*inner(m_k,GJ)
+            armijo = assemble(-(alpha*m_k - lmbd_k)*GJ_k*dx)
             
             # begin line-search
-            while Jk > J[-1] and srch > 1e-20: #TODO: impose Armijo condition here
+            while Jk > J[-1] + 0.01*srch*armijo and srch > 1e-20: # impose Armijo condition ==
                 srch = 0.5*srch
-                m.assign(m_k - srch*GJ)
-                Jk = ndu + 0.5*alpha*norm(m, 'L2')**2
+                m.assign(m_k - srch*GJ_k)
+                Jk = ndu[-1] + 0.5*alpha*norm(m, 'L2')**2
                 print 'Step-size set to: ' + str(srch)
                 
             if srch < 1e-20:
-                print 'Step-size below threshold, possible minimum found.'
+                print 'Step-size below threshold, convergence failed(?).'
                 iter = maxIter
             else:
                 mNorm = norm(m, 'H1')
@@ -129,33 +165,38 @@ class PDEConsOpt:
             
                 # update m_k
                 m_k.assign(m)
-                
                 J.append(Jk)
-                nGJ.append(norm(GJ, 'L2'))
+                nGJ.append(norm(GJ_k, 'L2'))
+                
                 if dispOutput:
                     print 'm-diff = ' + str(mDiff)  + ' | m-norm = ' + str(mNorm)
                     print 'J = ' + str(Jk) + '|  ||grad(J)|| = ' + str(nGJ[-1])
                     
         # update u and lambda using final m value
-        u = TrialFunction(U)
-        v = TestFunction(U)
         State = inner(grad(v),grad(u))*dx
-        L = -m_k*v*dx
-        u = Function(U)
-        solve(State == L, u, bcs[0])
-        u_k.assign(u)
+        L = m_k*v*dx
+        solve(State == L, u_k, bcs)
         
-        lmbd = TrialFunction(LMBD)
-        v = TestFunction(LMBD)
         Adj = inner(grad(v),grad(lmbd))*dx
         L = -(u_k-ud)*v*dx
-        lmbd = Function(LMBD)
-        solve(Adj == L, lmbd, bcs[1])
-        lmbd_k.assign(lmbd) 
+        solve(Adj == L, lmbd_k, bcs)
         
+        # find the Riesz rep. of dJ 
+        a = GJ*v*dx
+        L = (alpha*m_k - lmbd_k)*v*dx 
+        solve(a == L, GJ_k)
+        
+        du = Function(V)
         du.assign(u_k-ud)
         J.append(0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m_k, 'L2')**2)
         print 'Iterations terminated with J = ' + str(J[-1]) + ' and dJ = ' + str(nGJ[-1])
+        
+        mDiffArray.pop(0)
+        J.pop(0)
+        nGJ.pop(0)
+        ndu.pop(0)
+        
+        finalJ.append(J[-1])
         
         if writeData:
             # save solution
@@ -169,7 +210,4 @@ class PDEConsOpt:
             convergenceData = mDiffArray
             np.savetxt(filePath + '.csv', convergenceData)
         
-        mDiffArray.pop(0)
-        J.pop(0)
-        nGJ.pop(0)
         return u_k, m_k, lmbd_k, mDiffArray, J, nGJ
