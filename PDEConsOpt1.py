@@ -38,7 +38,7 @@ class PDEConsOpt:
         self.lmbd = lmbd
         self.GJ = GJ
         self.v = v
-    def solveMonolithic(self):
+    def calculateRef(self):
         # construct mixed function space
         mesh = self.mesh
         alpha = self.alpha
@@ -54,19 +54,21 @@ class PDEConsOpt:
         phi,psi,chi = TestFunction(H)
         ud = interpolate(ue , H.sub(0).sub(0).collapse()) # interpolate over u-space
         
-        A = assemble(inner(grad(u), grad(phi))*dx) # assemble mass matrix for u,lmbd
-        M = assemble(inner(grad(m), grad(chi))*dx) # assemble mass matrux for m
-        mu = assemble(inner(ud, phi)*dx) # assemble RHS (for adj. equation)
+#        A = assemble(inner(grad(u), grad(phi))*dx) # assemble mass matrix for u,lmbd
+#        M = assemble(inner(grad(m), grad(chi))*dx) # assemble mass matrix for m
+#        mu = assemble(inner(ud, phi)*dx) # assemble RHS (for adj. equation)
         
-#        F = (inner(u,phi)-m*phi)*dx + (inner(lmbd, psi) + (u-ud)*psi)*dx + (alpha*m - lmbd)*chi*dx
-#        a = (inner(u,phi)-m*phi)*dx + (inner(lmbd, psi) + u*psi)*dx + (alpha*m - lmbd)*chi*dx
-#        L = ud*psi*dx
+        #F = (inner(u,phi)-m*phi)*dx + (inner(lmbd, psi) + (u-ud)*psi)*dx + (alpha*m - lmbd)*chi*dx
+        a = (inner(u,phi)-m*phi)*dx + (inner(lmbd, psi) + u*psi)*dx + (alpha*m - lmbd)*chi*dx
+        L = ud*psi*dx
         
         U = Function(H)
-        solve(F == 0, U, solver_parameters={"linear_solver": "lu"})
+        ul,m = split(U)
+        u, lmbd = split(ul)
+        solve(a == L, U, solver_parameters={"linear_solver": "lu"})
         
-        return u, lmbd, m
-    def solveSD(self, srch = 100, iterTol = 1.0e-6, maxIter = 25,  
+        return u, m, lmbd
+    def solveSD(self, srch = 100, iterTol = 1.0e-5, maxIter = 25,  
                         dispOutput = False, writeData = False, filePath = 'solution-data/PDEOptSD'):
         """
         Solves the PDE-constrained opt. problem using steepest descent (SD)
@@ -195,8 +197,6 @@ class PDEConsOpt:
         J.pop(0)
         nGJ.pop(0)
         ndu.pop(0)
-        
-        finalJ.append(J[-1])
         
         if writeData:
             # save solution
