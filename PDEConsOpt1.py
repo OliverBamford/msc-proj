@@ -13,7 +13,6 @@ class PDEConsOpt:
         ud: Desired distribution (UFL expression)
         alpha: regularisation parameter
         """
-        
         # set up problem (parts common to all iterative methods)
         mesh = UnitSquareMesh(N, N)
         V = FunctionSpace(mesh, 'CG', p)
@@ -39,6 +38,15 @@ class PDEConsOpt:
         self.GJ = GJ
         self.v = v
     def calculateRef(self):
+        """
+        Solves the PDE-constrained opt. problem using monolithic approach.
+        LU factorisation is used to solve the matrix equation.
+
+        Outputs:
+        u: optimal state function
+        m: optimal control function
+        lmbd: Lagrange multiplier
+        """
         # construct mixed function space
         mesh = self.mesh
         alpha = self.alpha
@@ -67,27 +75,34 @@ class PDEConsOpt:
         u, lmbd = split(ul)
         solve(a == L, U, solver_parameters={"linear_solver": "lu"})
         
-        return u, m, lmbd
-    def solveSD(self, srch = 100, iterTol = 1.0e-5, maxIter = 25,  
+        #project solutions into finite element space (I am not sure why I have to do this...)
+        self.uRef = project(u , H.sub(0).sub(0).collapse())
+        self.lmbdRef = project(lmbd , H.sub(0).sub(1).collapse())
+        self.mRef = project(m , H.sub(1).collapse())
+        print norm(self.mRef, 'H1')
+       
+        return self.uRef, self.mRef, self.lmbdRef
+    def solveSD(self, srch = 500., iterTol = 1.0e-5, maxIter = 25,  
                         dispOutput = False, writeData = False, filePath = 'solution-data/PDEOptSD'):
         """
         Solves the PDE-constrained opt. problem using steepest descent (SD)
         
         Inputs:
         srch: initial SD step-size (will be reduced to satisfy Armijo condition)
-        iterTol: Iterations stop when J < iterTol. Default: 1e-6
+        iterTol: Iterations stop when J < iterTol. Default: 1e-5
         maxIter: Maximum number of iterations
         dispOutput(bool): display iteration differences and objective values at each iteration
         writeData(True/False): write solution and convergence data to files
         filePath: Path AND name of files WITHOUT file extension
         
         Outputs:
-        u: optimal state function
+        [u: optimal state function
         m: optimal control function
-        lmbd: Lagrange multiplier
-        mDiffArray: differences between iterative solutions (in H1 norm) at each iteration
+        lmbd: Lagrange multiplier]
+        [mDiffArray: differences between iterative solutions (in H1 norm) at each iteration
         J: objective value at each iteration
         nGJ: H1 norm of Riesz rep. of dJ at each iteration (SD direction)
+        refErr: H1 norms ||m_k-m_ref||. Will be an empty array if calculateRef method has not been run]
         
         Saved data:
         u saved to <filePath>_u.pvd
@@ -109,15 +124,17 @@ class PDEConsOpt:
         v = self.v
         
         # initialise arrays to store convergence data, these initial values will be removed
-        mDiffArray = [1e99]
+        mDiffArray = []
         J = [1e99]
-        nGJ = [1e99]
-        ndu= [1e99]
+        nGJ = []
+        ndu= []
+        refErr = []
         iter = 0
         
         # initial guesses
         lmbd_k = interpolate(Constant(1.0), V)
         m_k = interpolate(Constant(1.0), V)
+
         # initialise functions
         u_k = Function(V)
         GJ_k = Function(V)
@@ -151,7 +168,7 @@ class PDEConsOpt:
             armijo = assemble(-(alpha*m_k - lmbd_k)*GJ_k*dx)
             
             # begin line-search
-            while Jk > J[-1] + 0.01*srch*armijo and srch > 1e-20: # impose Armijo condition ==
+            while Jk > J[-1] + 0.01*srch*armijo and srch > 1e-20: # impose Armijo condition
                 srch = 0.5*srch
                 m.assign(m_k - srch*GJ_k)
                 Jk = ndu[-1] + 0.5*alpha*norm(m, 'L2')**2
@@ -169,6 +186,9 @@ class PDEConsOpt:
                 m_k.assign(m)
                 J.append(Jk)
                 nGJ.append(norm(GJ_k, 'L2'))
+                
+                if hasattr(self, 'mRef'):
+                    refErr.append(errornorm(m_k, self.mRef, 'H1'))
                 
                 if dispOutput:
                     print 'm-diff = ' + str(mDiff)  + ' | m-norm = ' + str(mNorm)
@@ -188,15 +208,11 @@ class PDEConsOpt:
         L = (alpha*m_k - lmbd_k)*v*dx 
         solve(a == L, GJ_k)
         
-        du = Function(V)
         du.assign(u_k-ud)
         J.append(0.5*norm(du, 'L2')**2 + 0.5*alpha*norm(m_k, 'L2')**2)
         print 'Iterations terminated with J = ' + str(J[-1]) + ' and dJ = ' + str(nGJ[-1])
         
-        mDiffArray.pop(0)
         J.pop(0)
-        nGJ.pop(0)
-        ndu.pop(0)
         
         if writeData:
             # save solution
@@ -210,4 +226,43 @@ class PDEConsOpt:
             convergenceData = mDiffArray
             np.savetxt(filePath + '.csv', convergenceData)
         
-        return u_k, m_k, lmbd_k, mDiffArray, J, nGJ
+        self.uSD = u_k
+        self.mSD = m_k
+        self.lmbdSD = lmbd_k
+        self.mDiffSD = mDiffArray
+        self.JSD = J
+        self.GJSD = nGJ
+        self.refErrSD = refErr
+        return [u_k, m_k, lmbd_k], [mDiffArray, J, nGJ, refErr]
+        
+    def plotConvergence(self):
+        """
+        Plots the convergence data (exact errors and iterate differences) for PDECO
+        """
+        # check which methods have been used to solve PDE           
+        if hasattr(self, 'uSD'):
+            plt.figure(1)
+            plt.subplot(2,2,1)
+            plt.title('$u_d$')
+            plot(self.ud)
+            plt.subplot(2,2,2)
+            plt.title('$u_k$')
+            plot(self.uSD)
+            plt.subplot(2,2,3)
+            plt.title('$m_k$')
+            plot(self.mSD)
+            plt.subplot(2,2,4)
+            plt.title('$\lambda_k$')
+            plot(self.lmbdSD)
+            plt.suptitle('Solution to "hello world!" PDECO Problem Using SD (N = ' + str(self.N) + ', p = ' + str(self.p) + ')')
+            
+            plt.figure(2)
+            plt.semilogy(self.mDiffSD, label='$||m_{k+1} - m_k||$')
+            plt.semilogy(self.JSD, label='$J$')
+            plt.semilogy(self.GJSD, label='$R(dJ)$')
+            plt.semilogy(self.refErrSD, label='$||m_k - m_{ref}||$')
+            plt.title('Convergence of Steepest-Descent Iterations on "hello world!" PDECO Problem (N = ' + str(self.N) + ', p = ' + str(self.p) + ')')
+            plt.legend()
+        else:
+            print 'No SD solution calculated, run solveSD method first'     
+       
