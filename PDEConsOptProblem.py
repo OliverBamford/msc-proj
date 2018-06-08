@@ -104,7 +104,7 @@ class PDEConsOptProblem:
             # Frechet derivative of J at point m (previous iterate) in direction GJ, used for b-Armijo
             armijo = assemble(-(self.alpha*self.m - self.lmbd)*self.RdJ*dx)
             Jt = self.eval_J(self.m)
-            print 'J_trial = ' + str(Jt) + ' | J_target = ' + str(Jk[-1] + 0.1*step*armijo)
+            # require sufficent decrease (Armijo condition)
             while Jt > (Jk[-1] + 0.1*step*armijo) and step > 1e-20 and iter > 1:
                 step = 0.75*step
                 # trial step with smaller step-size
@@ -124,3 +124,38 @@ class PDEConsOptProblem:
                     + str(norm(self.m, 'H1')) + ' | norm(R(dJ)) = ' + str(norm(self.RdJ, 'H1')))
         # remove initial value
         Jk.pop(0)
+
+from fenics_adjoint import *
+class nonlinearPDECOP:
+    def __init__(self, N, p, ue = Expression('sin(pi*x[0])*sin(pi*x[1])', degree=3), alpha = 1e-07):
+        mesh = UnitSquareMesh(N,N)
+        V = FunctionSpace(mesh, 'CG', p)
+        W = FunctionSpace(mesh, 'CG', p)
+        
+        # initial guess for control
+        self.m = interpolate(Expression('pi*x[0]*pi*x[1]', degree=1), W)
+        self.u = Function(V, name='State')
+        v = TestFunction(V)
+        
+        # solve state equation 
+        self.F = (inner(grad(self.u), grad(v)) - self.m*v)*dx
+        self.bc = DirichletBC(V, 0., 'on_boundary')
+        # dolfin_adjoint automatically saves iterates for use in control problem
+        solve(self.F == 0, self.u, self.bc)
+        
+        self.ud = interpolate(ue, V)
+        self.alpha = alpha
+        
+        J = Functional((0.5*inner(self.u-self.ud, self.u-self.ud))*dx + alpha/2*self.m**2*dx)
+        control = Control(m)
+        rf = ReducedFunctional(J, control)
+        
+        problem = MoolaOptimizationProblem(rf)
+        m_moola = moola.DolfinPrimalVector(self.m)
+        solver = moola.NewtonCG(problem, m_moola, options={'gtol': 1e-9,
+                                                           'maxiter': 20,
+                                                           'display': 3,
+                                                           'ncg_hesstol': 0})
+        sol = solver.solve()
+        m_opt = sol['control'].data
+        plot(m_opt, interactive=True, title="m_opt")
