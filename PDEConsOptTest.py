@@ -18,28 +18,26 @@ for N in [100]:
     m_k = Function(V)
     
     bcs = DirichletBC(V, 0, "on_boundary")
-
-    
     ud = interpolate(Expression('sin(pi*x[0])*sin(pi*x[1])', degree=3) , V)
-    
-    # initialise arrays to store convergence data, these initial values will be removed
-    mDiffArray = [1e99]
-    J = [1e99]
-    nGJ = [1e99]
-    ndu= [1e99]
-    iter = 0
     
     # initial guesses
     lmbd_k = interpolate(Constant(1.0), V)
     m_k = interpolate(Constant(1.0), V)
     m = Function(V)
     
+    # initialise arrays to store convergence data, these initial values will be removed
+    mDiffArray = [1e99]
+    J[-1] = [1e99]
+    nGJ = [1e99]
+    ndu= [1e99]
+    iter = 0
+    
     mDiff = 1.0
     iterTol = 1e-05
     maxIter = 10
     srch = 500
     # begin steepest descent
-    while mDiff > iterTol and iter < maxIter:
+    while J[-1] > iterTol and iter < maxIter:
         iter += 1
         
         # find u which satisfies state equation
@@ -48,6 +46,12 @@ for N in [100]:
         State = inner(grad(v),grad(u))*dx
         L = m_k*v*dx
         solve(State == L, u_k, bcs)
+        
+        if iter == 1:
+                du = Function(V)
+                du.assign(u_k-ud)
+                ndu.append(0.5*norm(du, 'L2')**2)
+                J = [ndu[-1] + 0.5*alpha*norm(m_k, 'L2')**2]
         
         # find lambda that satisfies adjoint equation
         lmbd = TrialFunction(V)
@@ -68,17 +72,17 @@ for N in [100]:
         du.assign(u_k-ud)
         ndu.append(0.5*norm(du, 'L2')**2)
         m.assign(m_k - srch*GJ) # trial m iterate
-        Jk = ndu[-1] + 0.5*alpha*norm(m, 'L2')**2 # objective value with trial iterate
+        Jk = ndu[-1] + 0.5*alpha*norm(m, 'L2')**2# objective value with trial iterate
         
         # Frechet derivative of J at point m_k in direction GJ, used for b-Armijo
         armijo = assemble(-(alpha*m_k - lmbd_k)*GJ*dx)
         
         # begin line-search
-        while Jk > J[-1] + 0.01*srch*armijo and srch > 1e-20: # impose Armijo condition ==
-            srch = 0.5*srch
-            m.assign(m_k - srch*GJ)
-            Jk = ndu[-1] + 0.5*alpha*norm(m, 'L2')**2
-            print 'Step-size set to: ' + str(srch)
+#        while Jk > J[-1] + 0.1*srch*armijo and srch > 1e-20: # impose Armijo condition ==
+#            srch = 0.5*srch
+#            m.assign(m_k - srch*GJ)
+#            Jk = ndu[-1] + 0.5*alpha*norm(m, 'L2')**2
+#            print 'Step-size set to: ' + str(srch)
             
         if srch < 1e-20:
             print 'Step-size below threshold, convergence failed(?).'
@@ -138,9 +142,9 @@ plt.plot(mDiffArray, label='$||m_{k+1} - m_k||$')
 plt.semilogy(ndu, label='$||u_{k+1} - u_d||$')
 plt.semilogy(J, label='$J$')
 plt.semilogy(nGJ, label='$R(dJ)$')
+plt.semilogy(refErr, label='$||m_k - m_{ref}||$')
 plt.title('Convergence of Steepest-Descent Iterations on "hello world!" PDECO Problem (N = 100, p = 1)')
 plt.legend()
-
 
 plt.figure(2)
 plt.subplot(2,2,1)
@@ -156,4 +160,3 @@ plt.subplot(2,2,4)
 plt.title('$\lambda_k$')
 plot(lmbd_k)
 plt.suptitle('Solution to "hello world!" PDECO Problem After 25 SD Iterations (N = 100, p = 1)')
-
