@@ -29,6 +29,7 @@ bc = DirichletBC(V, 0., 'on_boundary')
 u = Function(V, name='State')
 solve(a == L, u, bc)
 
+ud=ue
 #L2-tracking functional and Tikhonov regularization
 J_form = (0.5*inner(u-ud, u-ud))*dx + alpha/2*m**2*dx
 J = assemble(J_form)
@@ -50,7 +51,7 @@ RdJk = []
 iter = 0
 
 iterTol = 1e-05; maxIter = 25; dispOutput = True
-print(str(assemble(J_form_m)))
+
 while Jk[-1] > iterTol and iter < maxIter:
     iter += 1
 

@@ -12,7 +12,7 @@ class nonlinearPDE1:
         p: order of function space
         """
         # set up function space
-        mesh = UnitIntervalMesh(N)
+        mesh = UnitSquareMesh(N,N)
         self.V = FunctionSpace(mesh, 'CG', p)
         
         # set up BCs on left and right
@@ -58,7 +58,7 @@ class nonlinearPDE1:
         V = self.V
         u = TrialFunction(V)
         v = TestFunction(V)
-        u_k = interpolate(Constant(0.0), V)  # previous (known) u
+        u_k = interpolate(Constant(0.0), V) # previous (known) u
         a = inner(self.q(u_k)*grad(u), grad(v))*dx
         f = Constant(0.0)
         L = f*v*dx
@@ -68,7 +68,7 @@ class nonlinearPDE1:
         u = Function(V)     # new unknown function
         itErr = 1.0           # error measure ||u-u_k||
         iterDiffArray = []
-        exactErrArray = []   
+        exactErrArray = []
         iter = 0
         
         # Begin Picard iterations
@@ -82,11 +82,11 @@ class nonlinearPDE1:
             exErr = errornorm(self.uExpr, u, 'H1')
             
             iterDiffArray.append(itErr) # fill arrays with error data
-            exactErrArray.append(exErr)    
+            exactErrArray.append(exErr)
             
             if dispOutput:
                 print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + ', exact error = ' + str(exErr))
-            u_k.assign(u)   # update for next iteration
+            u_k.assign(u) # update for next iteration
         
         if writeData:
             # save solution
@@ -162,7 +162,7 @@ class nonlinearPDE1:
             itErr = errornorm(u_k, u, 'H1')
             exErr = errornorm(self.uExpr, u, 'H1')
             iterDiffArray.append(itErr) # fill arrays with error data
-            exactErrArray.append(exErr)    
+            exactErrArray.append(exErr)
             
             if dispOutput:
                 print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + ', exact error = ' + str(exErr))
