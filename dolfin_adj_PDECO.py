@@ -16,9 +16,10 @@ class PDEConstrOptProblem(object):
         """
         mesh = UnitSquareMesh(N, N)
         V = FunctionSpace(mesh, "CG", p)
+        V2 = FunctionSpace(mesh, "CG", p+2)
 
         X = SpatialCoordinate(mesh)
-        #u_t = interpolate(ue, V) #TODO: find out why this implemetation gives
+        #u_t = interpolate(ue, V2) #TODO: find out why this implemetation gives
                                     # better convergence
         u_t = sin(pi*X[0]) * sin(pi*X[1]) 
         self.alpha = alpha
