@@ -43,8 +43,6 @@ bcs = [B1, B2]
 DG0 = FunctionSpace(mesh, 'DG', 0)
 DG1 = FunctionSpace(mesh, 'DG', 1)
 f_h = interpolate(f, DG0)
-x_ = interpolate(Expression('x[0]', degree=1), DG1)
-h = 1/N
 
 myCells = cells(mesh)
 centers = []
@@ -70,18 +68,20 @@ for k in range(0, len(cellList)):
 #    k +=1
                                         
 u = Function(V)
-temp = Function(F)
+lflux = Function(F)
+dflux = Function(F)
                          
 itErr = 1.0           # error measure ||u-u_k||
 iterDiffArray = []
 exactErrArray = []
+eta_linArray = []
 iter = 0
 
 # Begin Picard iterations
 while itErr > iterTol and iter < maxIter:
     iter += 1
     
-    solve(a == L, u, bcs)
+    solve(a == L, u, bcs, solver_parameters={"linear_solver": "lu"})
     
     # calculate iterate difference and exact error in L2 norm
     itErr = errornorm(u_k, u, 'H1')
@@ -91,44 +91,73 @@ while itErr > iterTol and iter < maxIter:
     exactErrArray.append(exErr)
     
     # construct interpolation of sigma = (1+u)^2 * grad(u) into F 
+    # sigma^{k-1} = (1+u_k)**2 * grad(u)
+    # sigma = (1+u)**2 * grad(u)
+    # sigmakBar = Pi_0 sigma^{k-1}
+    # sigmaBar = Pi_0 sigma
     gu = project(grad(u), F)
-    sigma = (1+u)**2 * grad(u)
+    sigmakBar = interpolate(Expression(['((1 + u)*(1 + u) + \
+                                            (1 + u)*(1 + u))*gu[0]', 
+                                        '((1 + u)*(1 + u) + \
+                                            (1 + u)*(1 + u))*gu[1]'], 
+                                            u = u_k, gu = gu, degree=0), F)
+                                            # u = u_k (previous u iterate)
     sigmaBar = interpolate(Expression(['((1 + u)*(1 + u) + \
                                             (1 + u)*(1 + u))*gu[0]', 
                                         '((1 + u)*(1 + u) + \
                                             (1 + u)*(1 + u))*gu[1]'], 
-                                            u = u, gu = gu, degree=1), F)
-    # construct sum (second term of flux (d+l)) for each cell K
+                                            u = u, gu = gu, degree=0), F)
+    # construct sum (second terms Eqns (6.7) and (6.9) for each cell K
     rSum = []
+    rBarSum = []
     # find residual for each edge using 'test function trick'
-    R_eps = assemble(f_h*v*dx - inner(sigmaBar, grad(v))*dx)
+    R_eps = assemble(f_h*v*dx - inner(sigmakBar, grad(v))*dx)
+    Rbar_eps = assemble(f_h*v*dx - inner(sigmaBar, grad(v))*dx)
     for K in cellList:
         myEdges = edges(K)
         myVerts = vertices(K)
         # create list of cells edges and vertices 
-        # (would be replaced by a loop in 3D case)
+        # (would probably be replaced by a loop in 3D case)
         eps_K = [myEdges.next(), myEdges.next(), myEdges.next()]
         a_K = [myVerts.next(), myVerts.next(), myVerts.next()]
         # |T_e| = 1 for all internal edges
         cardT_e = 1
         # a_K[n] is the vertex opposite to the edge eps_K[n]
         sumK = Function(F)
+        sumBarK = Function(F)
         for i in range(0, len(eps_K)-1):
             #TODO: implement check to see if edge is on boundary
             R_e = R_eps[eps_K[i].index()][0] # find residual corresponding to edge
+            Rbar_e = Rbar_eps[eps_K[i].index()][0] # find barred residual corresponding to edge
             sumK += interpolate(Expression(['C*(x[0] - a0)',
                                             'C*(x[1] - a1)'],
                                             C = R_e/(cardT_e*d), 
                                             a0 = a_K[i].point().array()[0],
                                             a1 = a_K[i].point().array()[1],
                                             degree=1), F)
+            sumBarK += interpolate(Expression(['C*(x[0] - a0)',
+                                            'C*(x[1] - a1)'],
+                                            C = Rbar_e/(cardT_e*d), 
+                                            a0 = a_K[i].point().array()[0],
+                                            a1 = a_K[i].point().array()[1],
+                                            degree=1), F)
         rSum.append(sumK)
+        rBarSum.append(sumBarK)
+        
     # construct flux (d+l) for each element (Eq. (6.7))
-    dpl = []
+    d_T = []
+    l_T = []
+    eta_lin = 0.
     for k in range(0, len(f_hvec)):
-        temp.assign(-sigmaBar + f_hvec[k] - rSum[k])
-        dpl.append(temp)
-    
+        dflux.assign(-sigmaBar + f_hvec[k] - rBarSum[k])
+        lflux.assign(-sigmakBar + f_hvec[k] - rSum[k] - dflux)
+        d_T.append(dflux.copy(deepcopy=True))
+        l_T.append(lflux.copy(deepcopy=True))
+        eta_lin += norm(lflux, 'L2')**2
+    eta_lin = eta_lin**(0.5)
+    eta_linArray.append(eta_lin)
     if dispOutput:
-        print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + ', exact error = ' + str(exErr))
+        print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + 
+        ', exact error = ' + str(exErr) + ', eta_lin = ' + str(eta_lin))
+        
     u_k.assign(u) # update for next iteration
