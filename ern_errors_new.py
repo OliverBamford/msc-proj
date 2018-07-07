@@ -40,33 +40,29 @@ bcs = [B1, B2]
 
 #X = SpatialCoordinate(mesh)
 DG0 = FunctionSpace(mesh, 'DG', 0)
-DG1 = FunctionSpace(mesh, 'DG', 1)
 f_h = interpolate(f, DG0)
 #TODO: construct fluxes in CR space NOT DG space (f_h should be in DG0 still)
-F = VectorFunctionSpace(mesh, 'DG', degree=0, dim=d)
-f_hvec = interpolate(Expression(['x[0]', 'x[1]'], degree=0), F)
+F = VectorFunctionSpace(mesh, 'CR', degree=1, dim=d)
+f_hvec = interpolate(Expression(['x[0]', 'x[1]'], degree=1), F)
 f_ = np.zeros(f_hvec.vector().get_local().shape) # create np array which contains values to be assigned to f_hvec
 
 dm = F.dofmap()
 for cell in cells(mesh):
-    f_c = f_hvec.vector().get_local()[dm.cell_dofs(cell.index())] # get np array of all dofs in cell
+    dofs = dm.cell_dofs(cell.index())
+    f_c = f_hvec.vector().get_local()[dofs] # get np array of all dofs in cell
     mp = cell.midpoint().array() # get midpoint of cell
-    f_c = f*(f_c - mp[0:2])/d # construct f_h in cell
-    f_[dm.cell_dofs(cell.index())] = f_c # place cell values back into main array       
+    f_c[0:f_c.size/2] = f*(f_c[0:f_c.size/2] - mp[0])/d # construct f_h in cell
+    f_c[f_c.size/2:f_c.size] = f*(f_c[f_c.size/2:f_c.size] - mp[1])/d # note [x,x,x,y,y,y] structure of f_c
+    f_[dofs] = f_c # place cell values back into main array       
 
 f_hvec.vector().set_local(f_)
 
-#%%
-# construct residual sum
-#k = 0
-#for K in cellList:
-#    centerK = centers[k]
-#    k +=1
-                                        
+F0 = VectorFunctionSpace(mesh, 'DG', degree=0, dim=d) # space for 0-order interpolants (sigma)             
 u = Function(V)
 lflux = Function(F)
 dflux = Function(F)
-                         
+x_ = interpolate(Expression(['x[0]', 'x[1]'], degree=0), F) # used as 'x' vector when constructing flux
+                
 itErr = 1.0           # error measure ||u-u_k||
 iterDiffArray = []
 exactErrArray = []
@@ -96,28 +92,30 @@ while itErr > iterTol and iter < maxIter:
                                             (1 + u)*(1 + u))*gu[0]', 
                                         '((1 + u)*(1 + u) + \
                                             (1 + u)*(1 + u))*gu[1]'], 
-                                            u = u_k, gu = gu, degree=0), F)
+                                            u = u_k, gu = gu, degree=0), F0)
                                             # u = u_k (previous u iterate)
+    # must be interpolated into higher order CR space to be used for flux calculation
+    sigmakBar = interpolate(sigmakBar, F) 
     sigmaBar = interpolate(Expression(['((1 + u)*(1 + u) + \
                                             (1 + u)*(1 + u))*gu[0]', 
                                         '((1 + u)*(1 + u) + \
                                             (1 + u)*(1 + u))*gu[1]'], 
-                                            u = u, gu = gu, degree=0), F)
+                                            u = u, gu = gu, degree=0), F0)
+    sigmaBar = interpolate(sigmaBar, F)
     # construct sum (second terms Eqns (6.7) and (6.9) for each cell K
-#    rSum = []
-#    rBarSum = []
     # find residual for each edge using 'test function trick'
-                
     R_eps = assemble(f_h*v*dx - inner(sigmakBar, grad(v))*dx)
     Rbar_eps = assemble(f_h*v*dx - inner(sigmaBar, grad(v))*dx)
-    rk = interpolate(Expression(['x[0]', 'x[1]'], degree=0), F)
-    r = interpolate(Expression(['x[0]', 'x[1]'], degree=0), F)
+    rk = Function(F)
+    r = Function(F)
     rk_ = np.zeros(rk.vector().get_local().shape)
     r_ = np.zeros(r.vector().get_local().shape)
-    
+    jumps = 0
     for cell in cells(mesh):
-        rk_c = rk.vector().get_local()[dm.cell_dofs(cell.index())]
-        r_c = r.vector().get_local()[dm.cell_dofs(cell.index())]
+        dofs = dm.cell_dofs(cell.index())
+        rk_c = rk.vector().get_local()[dofs]
+        r_c = r.vector().get_local()[dofs]
+        x_c = x_.vector().get_local()[dofs]
         myEdges = edges(cell)
         myVerts = vertices(cell)
         eps_K = [myEdges.next(), myEdges.next(), myEdges.next()]
@@ -126,15 +124,16 @@ while itErr > iterTol and iter < maxIter:
         cardT_e = 1
         # a_K[n] is the vertex opposite to the edge eps_K[n]
         for i in range(0, len(eps_K)-1):
-        #TODO: ensure only vertices opposite to dofs on edge e (NOT CELL) are subtracted from rk_c
            R_e = R_eps[eps_K[i].index()][0] # find residual corresponding to edge
            Rbar_e = Rbar_eps[eps_K[i].index()][0] # find barred residual corresponding to edge          
-           rk_c -= a_K[i].point().array()[0:2] # find distance between all dofs on cell and vertex opposite to edge
-           rk_c *= 1/(cardT_e*d)*R_e
-           r_c = rk_c * 1/(cardT_e*d)*Rbar_e
+           # find distance between all dofs on cell and vertex opposite to edge
+           rk_c[0:rk_c.size/2] += 1./(cardT_e*d)*R_e*(x_c[0:rk_c.size/2] - a_K[i].point().array()[0]) 
+           rk_c[rk_c.size/2:rk_c.size] += 1./(cardT_e*d)*R_e*(x_c[rk_c.size/2:rk_c.size] - a_K[i].point().array()[1]) 
+           r_c[0:r_c.size/2] += 1./(cardT_e*d)*Rbar_e*(x_c[0:r_c.size/2] - a_K[i].point().array()[0]) 
+           r_c[r_c.size/2:r_c.size] += 1./(cardT_e*d)*Rbar_e*(x_c[r_c.size/2:r_c.size] - a_K[i].point().array()[1]) 
            
-        rk_[dm.cell_dofs(cell.index())] = rk_c # place cell values back into main array
-        r_[dm.cell_dofs(cell.index())] = r_c # place cell values back into main array
+        rk_[dofs] = rk_c # place cell values back into main array
+        r_[dofs] = r_c # place cell values back into main array
     rk.vector().set_local(rk_)
     r.vector().set_local(r_)
     # construct flux (d+l) for each element (Eq. (6.7))
@@ -146,5 +145,4 @@ while itErr > iterTol and iter < maxIter:
     if dispOutput:
         print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + 
         ', exact error = ' + str(exErr) + ', eta_lin = ' + str(eta_lin))
-        
     u_k.assign(u) # update for next iteration
