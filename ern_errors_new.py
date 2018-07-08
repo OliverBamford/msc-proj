@@ -27,7 +27,7 @@ B2 = DirichletBC(V, Constant(1.0), lambda x, on_boundary : right_boundary(x, on_
 # construct exact solution in C++ format
 uExpr = Expression('pow((pow(2,m+1) - 1)*x[0] + 1,(1/(m+1))) - 1', m = 2, degree=4)
 
-iterTol = 1.0e-5; maxIter = 25; dispOutput = True
+iterTol = 1.0e-11; maxIter = 25; dispOutput = True
 
 u = TrialFunction(V)
 v = TestFunction(V)
@@ -41,7 +41,7 @@ bcs = [B1, B2]
 #X = SpatialCoordinate(mesh)
 DG0 = FunctionSpace(mesh, 'DG', 0)
 f_h = interpolate(f, DG0)
-#TODO: construct fluxes in CR space NOT DG space (f_h should be in DG0 still)
+#TODO: make this RTN space
 F = VectorFunctionSpace(mesh, 'CR', degree=1, dim=d)
 f_hvec = interpolate(Expression(['x[0]', 'x[1]'], degree=1), F)
 f_ = np.zeros(f_hvec.vector().get_local().shape) # create np array which contains values to be assigned to f_hvec
@@ -61,16 +61,21 @@ F0 = VectorFunctionSpace(mesh, 'DG', degree=0, dim=d) # space for 0-order interp
 u = Function(V)
 lflux = Function(F)
 dflux = Function(F)
+discflux = Function(F)
 x_ = interpolate(Expression(['x[0]', 'x[1]'], degree=0), F) # used as 'x' vector when constructing flux
                 
 itErr = 1.0           # error measure ||u-u_k||
+eta_lin = 1.
+eta_disc = 0.
+gamma_lin = 0.1
 iterDiffArray = []
 exactErrArray = []
 eta_linArray = []
+eta_discArray = []
 iter = 0
 
 # Begin Picard iterations
-while itErr > iterTol and iter < maxIter:
+while eta_lin > gamma_lin*eta_disc and iter < maxIter:
     iter += 1
     
     solve(a == L, u, bcs, solver_parameters={"linear_solver": "lu"})
@@ -87,7 +92,7 @@ while itErr > iterTol and iter < maxIter:
     # sigma = (1+u)**2 * grad(u)
     # sigmakBar = Pi_0 sigma^{k-1}
     # sigmaBar = Pi_0 sigma
-    gu = project(grad(u), F)
+    gu = project(grad(u), F) #TODO: make sure this is legit
     sigmakBar = interpolate(Expression(['((1 + u)*(1 + u) + \
                                             (1 + u)*(1 + u))*gu[0]', 
                                         '((1 + u)*(1 + u) + \
@@ -110,9 +115,8 @@ while itErr > iterTol and iter < maxIter:
     r = Function(F)
     rk_ = np.zeros(rk.vector().get_local().shape)
     r_ = np.zeros(r.vector().get_local().shape)
-    jumps = 0
     for cell in cells(mesh):
-        dofs = dm.cell_dofs(cell.index())
+        dofs = dm.cell_dofs(cell.index()) # get indices of dofs belonging to cell
         rk_c = rk.vector().get_local()[dofs]
         r_c = r.vector().get_local()[dofs]
         x_c = x_.vector().get_local()[dofs]
@@ -141,8 +145,13 @@ while itErr > iterTol and iter < maxIter:
     lflux.assign(-sigmakBar + f_hvec - rk - dflux)
     eta_lin = norm(lflux, 'L2')**(0.5)
     eta_linArray.append(eta_lin)
+    #TODO: calculate eta_NC to include in eta_disc
+    discflux.assign(dflux + sigmaBar)
+    eta_disc = 2**(0.5)*norm(discflux, 'L2')**(0.5)
+    eta_discArray.append(eta_disc)
     
     if dispOutput:
         print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + 
-        ', exact error = ' + str(exErr) + ', eta_lin = ' + str(eta_lin))
+        ', exact error = ' + str(exErr) + ', eta_lin = ' + str(eta_lin)
+        + ' , eta_disc = ' + str(eta_disc))
     u_k.assign(u) # update for next iteration
