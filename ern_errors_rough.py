@@ -11,7 +11,7 @@ def q(u):
 def dqdu(u):
         return 2*(1+u)
         
-N = 10
+N = 5
 p = 1
 d = 2 # dimension of the space
 
@@ -61,11 +61,6 @@ for k in range(0, len(cellList)):
                                          xk1=centers[k].array()[1], 
                                          c = f_h(centers[k])/d , degree=1), F))
                                      
-# construct residual sum
-#k = 0
-#for K in cellList:
-#    centerK = centers[k]
-#    k +=1
                                         
 u = Function(V)
 lflux = Function(F)
