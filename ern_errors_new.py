@@ -16,8 +16,6 @@ p = 1
 d = 2 # dimension of the space
 
 mesh = UnitSquareMesh(N,N)
-mesh.init(1) # generate edges
-mesh.init(d-1,d) # Build connectivity between facets and cells
 V = FunctionSpace(mesh, 'CR', p)
 
 # set up BCs on left and right
@@ -73,11 +71,6 @@ dflux = Function(RTN)
 discflux = Function(RTN)
 mf = MeshFunctionSizet(mesh, 1, 0)
 x_ = interpolate(Expression(['x[0]', 'x[1]'], degree=0), F) # used as 'x' vector when constructing flux
-
-myCells = []
-cell_it = cells(mesh) # get cells in mesh (iterator)
-for i in cell_it:
-    myCells.append(cell_it.next())
                
 itErr = 1.0 # error measure ||u-u_k||
 eta_lin = 1.
@@ -129,7 +122,7 @@ while eta_lin > gamma_lin*eta_disc and iter < maxIter:
     rk_ = np.zeros(rk.vector().get_local().shape)
     r_ = np.zeros(r.vector().get_local().shape)
     eta_disc = 0.
-    for cell in myCells:
+    for cell in cells(mesh):
         dofs = dm.cell_dofs(cell.index()) # get indices of dofs belonging to cell
         rk_c = rk.vector().get_local()[dofs]
         r_c = r.vector().get_local()[dofs]
@@ -154,9 +147,9 @@ while eta_lin > gamma_lin*eta_disc and iter < maxIter:
            adj_cells = eps_K[i].entities(d) # get cells which share edge eps_K[i]
            # s := q = 2
            mf.set_value(eps_K[i].mesh_id(), 1) # mark domain to integrate over
-           eta_NCK += assemble(jump(u)*jump(u)*dS(subdomain_data=mf)) / eps_K[i].length() # squared L2 of jump norm along edge
+           eta_NCK += assemble(jump(u)*jump(u)*dS(subdomain_data=mf)) / eps_K[i].length() # squared L2 norm of jump along edge
            mf.set_value(eps_K[i].mesh_id(), 0) # un-mark domain
-        # compute local discretisation estimator
+        # add squared local discretisation estimator to total
         eta_disc += 2*(assemble_local((dflux+sigmaBar)**2*dx, cell)**(0.5) + eta_NCK)**2
         rk_[dofs] = rk_c # place cell values back into main array
         r_[dofs] = r_c # place cell values back into main array
