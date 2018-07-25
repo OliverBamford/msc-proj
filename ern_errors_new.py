@@ -42,8 +42,7 @@ bcs = [B1, B2]
 DG0 = FunctionSpace(mesh, 'DG', 0)
 f_h = interpolate(f, DG0)
 
-#TODO: implement this in RTN space
-F = VectorFunctionSpace(mesh, 'CR', 1, dim=2)
+F = VectorFunctionSpace(mesh, 'CR', 1, dim=d)
 X = MeshCoordinates(mesh)
 f_hvec = interpolate(X, F)
 f_ = np.zeros(f_hvec.vector().get_local().shape) # create np array which contains values to be assigned to f_hvec
@@ -68,11 +67,11 @@ f_hvec = interpolate(f_hvec, RTN)
 F0 = VectorFunctionSpace(mesh, 'DG', degree=0, dim=d) # space for 0-order interpolants (sigma)
 FC = FunctionSpace(mesh, 'CG', 2) # space for projecting jump operator onto
 u = Function(V)
-lflux = Function(F)
-dflux = Function(F)
-discflux = Function(F)
+lflux = Function(RTN)
+dflux = Function(RTN)
+discflux = Function(RTN)
 x_ = interpolate(Expression(['x[0]', 'x[1]'], degree=0), F) # used as 'x' vector when constructing flux
-                
+               
 itErr = 1.0 # error measure ||u-u_k||
 eta_lin = 1.
 eta_disc = 0.
@@ -101,7 +100,7 @@ while eta_lin > gamma_lin*eta_disc and iter < maxIter:
     # sigma = (1+u)^2 * grad(u)
     # sigmakBar = Pi_0 sigma^{k-1}
     # sigmaBar = Pi_0 sigma
-    gu = project(grad(u), RTN) #TODO: make sure this is legit
+    gu = project(grad(u), F0) #TODO: make sure this is legit
     sigmakBar = interpolate(Expression(['((1 + u)*(1 + u) + \
                                             (1 + u)*(1 + u))*gu[0]', 
                                         '((1 + u)*(1 + u) + \
@@ -159,6 +158,7 @@ while eta_lin > gamma_lin*eta_disc and iter < maxIter:
     eta_lin = norm(lflux, 'L2')**(0.5)
     eta_linArray.append(eta_lin)
     #TODO: calculate eta_NC to include in eta_disc
+    # q = p = 2
     discflux.assign(dflux + sigmaBar)
     eta_disc = 2**(0.5)*norm(discflux, 'L2')**(0.5)
     eta_discArray.append(eta_disc)
