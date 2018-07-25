@@ -17,6 +17,7 @@ d = 2 # dimension of the space
 
 mesh = UnitSquareMesh(N,N)
 mesh.init(1) # generate edges
+mesh.init(d-1,d) # Build connectivity between facets and cells
 V = FunctionSpace(mesh, 'CR', p)
 
 # set up BCs on left and right
@@ -70,7 +71,13 @@ u = Function(V)
 lflux = Function(RTN)
 dflux = Function(RTN)
 discflux = Function(RTN)
+mf = MeshFunctionSizet(mesh, 1, 0)
 x_ = interpolate(Expression(['x[0]', 'x[1]'], degree=0), F) # used as 'x' vector when constructing flux
+
+myCells = []
+cell_it = cells(mesh) # get cells in mesh (iterator)
+for i in cell_it:
+    myCells.append(cell_it.next())
                
 itErr = 1.0 # error measure ||u-u_k||
 eta_lin = 1.
@@ -100,21 +107,19 @@ while eta_lin > gamma_lin*eta_disc and iter < maxIter:
     # sigma = (1+u)^2 * grad(u)
     # sigmakBar = Pi_0 sigma^{k-1}
     # sigmaBar = Pi_0 sigma
-    gu = project(grad(u), F0) #TODO: make sure this is legit
+    gu = project(grad(u), F) #TODO: make sure this is legit
     sigmakBar = interpolate(Expression(['((1 + u)*(1 + u) + \
                                             (1 + u)*(1 + u))*gu[0]', 
                                         '((1 + u)*(1 + u) + \
                                             (1 + u)*(1 + u))*gu[1]'], 
-                                            u = u_k, gu = gu, degree=0), F0)
+                                            u = u_k, gu = gu, degree=0), RTN)
                                             # u = u_k (previous u iterate)
-    # must be interpolated into higher order CR space to be used for flux calculation
-    sigmakBar = interpolate(sigmakBar, RTN) 
     sigmaBar = interpolate(Expression(['((1 + u)*(1 + u) + \
                                             (1 + u)*(1 + u))*gu[0]', 
                                         '((1 + u)*(1 + u) + \
                                             (1 + u)*(1 + u))*gu[1]'], 
-                                            u = u, gu = gu, degree=0), F0)
-    sigmaBar = interpolate(sigmaBar, RTN)
+                                            u = u, gu = gu, degree=0), RTN)
+
     # construct sum (second terms Eqns (6.7) and (6.9) for each cell K
     # find residual for each edge using 'test function trick'
     R_eps = assemble(f_h*v*dx - inner(sigmakBar, grad(v))*dx)
@@ -123,7 +128,8 @@ while eta_lin > gamma_lin*eta_disc and iter < maxIter:
     r = Function(F)
     rk_ = np.zeros(rk.vector().get_local().shape)
     r_ = np.zeros(r.vector().get_local().shape)
-    for cell in cells(mesh):
+    eta_disc = 0.
+    for cell in myCells:
         dofs = dm.cell_dofs(cell.index()) # get indices of dofs belonging to cell
         rk_c = rk.vector().get_local()[dofs]
         r_c = r.vector().get_local()[dofs]
@@ -134,6 +140,7 @@ while eta_lin > gamma_lin*eta_disc and iter < maxIter:
         a_K = [myVerts.next(), myVerts.next(), myVerts.next()]
         # |T_e| = 1 for all internal edges
         cardT_e = 1
+        eta_NCK = 0.
         # a_K[n] is the vertex opposite to the edge eps_K[n]
         for i in range(0, len(eps_K)-1):
            R_e = R_eps[eps_K[i].index()][0] # find residual corresponding to edge
@@ -144,24 +151,29 @@ while eta_lin > gamma_lin*eta_disc and iter < maxIter:
            r_c[0:r_c.size/2] += 1./(cardT_e*d)*Rbar_e*(x_c[0:r_c.size/2] - a_K[i].point().array()[0]) 
            r_c[r_c.size/2:r_c.size] += 1./(cardT_e*d)*Rbar_e*(x_c[r_c.size/2:r_c.size] - a_K[i].point().array()[1]) 
            
+           adj_cells = eps_K[i].entities(d) # get cells which share edge eps_K[i]
+           # s := q = 2
+           mf.set_value(eps_K[i].mesh_id(), 1) # mark domain to integrate over
+           eta_NCK += assemble(jump(u)*jump(u)*dS(subdomain_data=mf)) / eps_K[i].length() # squared L2 of jump norm along edge
+           mf.set_value(eps_K[i].mesh_id(), 0) # un-mark domain
+        # compute local discretisation estimator
+        eta_disc += 2*(assemble_local((dflux+sigmaBar)**2*dx, cell)**(0.5) + eta_NCK)**2
         rk_[dofs] = rk_c # place cell values back into main array
         r_[dofs] = r_c # place cell values back into main array
+        
     rk.vector().set_local(rk_)
     r.vector().set_local(r_)
-    
+
     # interpolate CR construction of residuals into RTN
     rk = interpolate(rk, RTN)
     r = interpolate(r, RTN)    
+    # compute global discretisation estimator
+    eta_disc = eta_disc**(0.5)
     # construct flux (d+l) for each element (Eq. (6.7))
     dflux.assign(-sigmaBar + f_hvec - r)
     lflux.assign(-sigmakBar + f_hvec - rk - dflux)
     eta_lin = norm(lflux, 'L2')**(0.5)
     eta_linArray.append(eta_lin)
-    #TODO: calculate eta_NC to include in eta_disc
-    # q = p = 2
-    discflux.assign(dflux + sigmaBar)
-    eta_disc = 2**(0.5)*norm(discflux, 'L2')**(0.5)
-    eta_discArray.append(eta_disc)
     
     if dispOutput:
         print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + 
