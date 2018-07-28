@@ -12,9 +12,10 @@ class nonlinearPDE1:
         p: order of function space
         """
         # set up function space
-        mesh = UnitSquareMesh(N,N)
-        self.V = FunctionSpace(mesh, 'CG', p)
-        
+        self.d = d
+        self.mesh = UnitSquareMesh(N,N)
+        self.V = FunctionSpace(self.mesh, 'CR', p)
+        v = TestFunction(V)
         # set up BCs on left and right
         # lambda functions ensure the boundary methods take two variables
         self.B1 = DirichletBC(self.V, Constant(0.0), lambda x, on_boundary : self.left_boundary(x, on_boundary)) # u(0) = 0
@@ -22,6 +23,45 @@ class nonlinearPDE1:
 
         # construct exact solution in C format
         self.uExpr = Expression('pow((pow(2,m+1) - 1)*x[0] + 1,(1/(m+1))) - 1', m = 2, degree=4)
+        self.f = Constant(0.0)
+        
+        # ERN ERRORS STUFF #
+        DG0 = FunctionSpace(self.mesh, 'DG', 0)
+        self.f_h = interpolate(f, DG0)
+        
+        self.F = VectorFunctionSpace(self.mesh, 'CR', 1, dim=d)
+        X = MeshCoordinates(self.mesh)
+        f_hvec = interpolate(X, self.F)
+        f_ = np.zeros(f_hvec.vector().get_local().shape) # create np array which contains values to be assigned to f_hvec
+        
+        self.dm = F.dofmap()
+        for cell in cells(self.mesh):
+            dofs = self.dm.cell_dofs(cell.index())
+            f_c = f_hvec.vector().get_local()[dofs] # get np array of all dof values in cell
+            mp = cell.midpoint().array() # get midpoint of cell
+            f_c[0:f_c.size/2] = f_h.vector().get_local()[cell.index()]*(f_c[0:f_c.size/2] - mp[0])/d # construct f_h in cell
+            f_c[f_c.size/2:f_c.size] = f_h.vector().get_local()[cell.index()]*(f_c[f_c.size/2:f_c.size] - mp[1])/d # note [x,x,x,y,y,y] structure of f_c
+            f_[dofs] = f_c # place cell values back into main array
+        
+        f_hvec.vector().set_local(f_)
+        
+        # we have constructed f_h in CR, which has dofs: pointwise evaluation
+        # need to constuct f_h in RTN, which has dofs: moments of the normal component against P_{q-1} on facets
+        # note that dofs are in the same locations for CR1 and RT1
+        self.RTN = FunctionSpace(self.mesh, 'RT', 1)
+        self.f_hvec = interpolate(f_hvec, self.RTN)
+        self.sigmakBar = Function(self.RTN)
+        self.sigmaBar = Function(self.RTN)
+        
+        self.R_eps_form = self.f_h*v*dx - inner(self.sigmakBar, grad(v))*dx
+        self.Rbar_eps_form = self.f_h*v*dx - inner(self.sigmaBar, grad(v))*dx
+        
+        self.F0 = VectorFunctionSpace(self.mesh, 'DG', degree=0, dim=d) # space for 0-order interpolants (sigma)
+        self.lflux = Function(self.RTN)
+        self.dflux = Function(self.RTN)
+        self.discflux = Function(self.RTN)
+        self.mf = MeshFunctionSizet(self.mesh, 1, 0)
+        self.x_ = interpolate(Expression(['x[0]', 'x[1]'], degree=0), self.F) # used as 'x' vector when constructing flux
         
     def left_boundary(self, x, on_boundary):
             return on_boundary and abs(x[0]) < 1E-14
@@ -32,7 +72,9 @@ class nonlinearPDE1:
     def dqdu(self,u):
             return 2*(1+u)
             
-    def solvePicard(self, iterTol = 1.0e-5, maxIter = 25, dispOutput = False, writeData = True, filePath = 'solution-data/PDE1Picard'):
+    def solvePicard(self, iterTol = 1.0e-5, maxIter = 25, dispOutput = False, 
+                    writeData = True, ernErrors = False,
+                    filePath = 'solution-data/PDE1Picard'):
         """
         Solves the PDE using Picard iterations
         
@@ -41,6 +83,7 @@ class nonlinearPDE1:
         maxIter: Maximum number of iterations
         dispOutput(bool): display iteration differences and exact errors at each iteration
         writeData(True/False): write solution and convergence data to files
+        ernErrors(True/False): calculate Ern error estimated at each iteration
         filePath: Path AND name of files WITHOUT file extension
         
         Outputs:
@@ -60,8 +103,7 @@ class nonlinearPDE1:
         v = TestFunction(V)
         u_k = interpolate(Constant(0.0), V) # previous (known) u
         a = inner(self.q(u_k)*grad(u), grad(v))*dx
-        f = Constant(0.0)
-        L = f*v*dx
+        L = self.f*v*dx
         
         bcs = [self.B1, self.B2] 
         
@@ -70,7 +112,7 @@ class nonlinearPDE1:
         iterDiffArray = []
         exactErrArray = []
         iter = 0
-        
+        if ernErrors: error_estimators = np.array([[0.,0.,0.,0.]])
         # Begin Picard iterations
         while itErr > iterTol and iter < maxIter:
             iter += 1
@@ -80,6 +122,9 @@ class nonlinearPDE1:
             # calculate iterate difference and exact error in L2 norm
             itErr = errornorm(u_k, u, 'H1')
             exErr = errornorm(self.uExpr, u, 'H1')
+            
+            if ernErrors:
+                np.concatenate((error_estimators, np.array([self.calculateErnErrors(u, u_k)])), axis = 0)
             
             iterDiffArray.append(itErr) # fill arrays with error data
             exactErrArray.append(exErr)
@@ -181,7 +226,79 @@ class nonlinearPDE1:
         self.newtonIterDiff = iterDiffArray
         self.newtonExactErr = exactErrArray  
         return [u_k, iterDiffArray, exactErrArray]
+    
+    def calculateErnErrors(self, u, u_k):
+        gu = project(grad(u), self.F) #TODO: make sure this is legit
+        self.sigmakBar = interpolate(Expression(['(1 + u)*(1 + u)*gu[0]', 
+                                        '(1 + u)*(1 + u)*gu[1]'], 
+                                            u = u_k, gu = gu, degree=0), self.F0)
+                                            # u = u_k (previous u iterate)
+        self.sigmakBar = interpolate(self.sigmakBar, self.RTN)
+        self.sigmaBar = interpolate(Expression(['(1 + u)*(1 + u)*gu[0]', 
+                                            '(1 + u)*(1 + u)*gu[1]'], 
+                                                u = u, gu = gu, degree=0), self.F0)
+        self.sigmaBar = interpolate(self.sigmaBar, self.RTN)
         
+        # construct sum (second terms Eqns (6.7) and (6.9) for each cell K
+        # find residual for each edge using 'test function trick'
+        R_eps = assemble(self.R_eps_form)
+        Rbar_eps = assemble(self.Rbar_eps_form)
+        rk = Function(self.F)
+        r = Function(self.F)
+        rk_ = np.zeros(rk.vector().get_local().shape)
+        r_ = np.zeros(r.vector().get_local().shape)
+        eta_disc = 0.
+        eta_quad = 0.
+        eta_osc = 0.
+        for cell in cells(self.mesh):
+            dofs = self.dm.cell_dofs(cell.index()) # get indices of dofs belonging to cell
+            rk_c = rk.vector().get_local()[dofs]
+            r_c = r.vector().get_local()[dofs]
+            x_c = self.x_.vector().get_local()[dofs]
+            myEdges = edges(cell)
+            myVerts = vertices(cell)
+            eps_K = [myEdges.next(), myEdges.next(), myEdges.next()]
+            a_K = [myVerts.next(), myVerts.next(), myVerts.next()]
+            # |T_e| = 2 for all internal edges
+            cardT_e = 2.
+            eta_NCK = 0.
+            # a_K[n] is the vertex opposite to the edge eps_K[n]
+            for i in range(0, len(eps_K)-1):
+               cardT_e = eps_K[i].entities(self.d).size # number of cells sharing e 
+               R_e = R_eps[eps_K[i].index()][0] # find residual corresponding to edge
+               Rbar_e = Rbar_eps[eps_K[i].index()][0] # find barred residual corresponding to edge          
+               # find distance between all dofs on cell and vertex opposite to edge
+               rk_c[0:rk_c.size/2] += 1./(cardT_e*self.d)*R_e*(x_c[0:rk_c.size/2] - a_K[i].point().array()[0]) 
+               rk_c[rk_c.size/2:rk_c.size] += 1./(cardT_e*self.d)*R_e*(x_c[rk_c.size/2:rk_c.size] - a_K[i].point().array()[1]) 
+               r_c[0:r_c.size/2] += 1./(cardT_e*self.d)*Rbar_e*(x_c[0:r_c.size/2] - a_K[i].point().array()[0]) 
+               r_c[r_c.size/2:r_c.size] += 1./(cardT_e*self.d)*Rbar_e*(x_c[r_c.size/2:r_c.size] - a_K[i].point().array()[1]) 
+
+               # s := q = 2
+               self.mf.set_value(eps_K[i].mesh_id(), 1) # mark domain to integrate over
+               eta_NCK += assemble(jump(u)*jump(u)*dS(subdomain_data=self.mf)) / eps_K[i].length() # squared L2 norm of jump along edge
+               self.mf.set_value(eps_K[i].mesh_id(), 0) # un-mark domain
+            # add squared local discretisation estimator to total
+            eta_disc += 2**(0.5)*(assemble_local((dflux+sigmaBar)**2*dx, cell)**(0.5) + eta_NCK)**2
+            eta_osc += cell.h()/np.pi * assemble_local((f - self.f_h)**2*dx, cell)**(0.5)
+            rk_[dofs] = rk_c # place cell values back into main array
+            r_[dofs] = r_c # place cell values back into main array
+            
+        rk.vector().set_local(rk_)
+        r.vector().set_local(r_)
+        
+        # interpolate CR construction of residuals into RTN
+        rk = interpolate(rk, self.RTN)
+        r = interpolate(r, self.RTN)    
+        # compute global discretisation and quadrature estimators
+        eta_disc = eta_disc**(0.5)
+        eta_quad = assemble((q(u)*gu-sigmaBar)**2*dx)**(0.5)
+        # construct flux (d+l) for each element (Eq. (6.7))
+        dflux.assign(-sigmaBar + self.f_hvec - r)
+        lflux.assign(-sigmakBar + self.f_hvec - rk - self.dflux)
+        eta_lin = norm(self.lflux, 'L2')**(0.5)
+        
+        return np.array([eta_disc, eta_lin, eta_quad, eta_osc])
+
     def plotConvergence(self):
         """
         Plots the convergence data (exact errors and iterate differences) for 
