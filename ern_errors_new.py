@@ -3,13 +3,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 def left_boundary(x, on_boundary):
-        return on_boundary and abs(x[0]) < 1E-14
+    return on_boundary and abs(x[0]) < 1E-14
 def right_boundary(x, on_boundary):
-        return on_boundary and abs(x[0]-1) < 1E-14
+    return on_boundary and abs(x[0]-1) < 1E-14
+def on_boundary(x, on_boundary):
+    return on_boundary and abs(x) < 1E-14
 def q(u):
-        return (1+u)**2
+    return (1+u)**2
 def dqdu(u):
-        return 2*(1+u)
+    return 2*(1+u)
 
 N = 5
 p = 1
@@ -30,7 +32,7 @@ iterTol = 1.0e-11; maxIter = 25; dispOutput = True
 
 u = TrialFunction(V)
 v = TestFunction(V)
-u_k = interpolate(Constant(0.0), V) # previous (known) u
+u_k = interpolate(Constant(1.0), V) # previous (known) u
 a = inner(q(u_k)*grad(u), grad(v))*dx
 f = Constant(0.0)
 #f = Expression('x[0] + x[1]', degree=4)
@@ -75,7 +77,7 @@ x_ = interpolate(Expression(['x[0]', 'x[1]'], degree=0), F) # used as 'x' vector
 itErr = 1.0 # error measure ||u-u_k||
 eta_lin = 1.
 eta_disc = 0.
-gamma_lin = 0.0001
+gamma_lin = 0.1
 iterDiffArray = []
 exactErrArray = []
 iter = 0
@@ -111,8 +113,8 @@ while eta_lin > gamma_lin*eta_disc and iter < maxIter:
 
     # construct sum (second terms Eqns (6.7) and (6.9) for each cell K
     # find residual for each edge using 'test function trick'
-    R_eps = assemble(f_h*v*dx - inner(sigmakBar, grad(v))*dx)
-    Rbar_eps = assemble(f_h*v*dx - inner(sigmaBar, grad(v))*dx)
+    R_eps = assemble(f_h*v*dx - inner(q(u_k)*grad(u), grad(v))*dx)
+    Rbar_eps = assemble(f_h*v*dx - inner(q(u)*grad(u), grad(v))*dx)
     rk = Function(F)
     r = Function(F)
     rk_ = np.zeros(rk.vector().get_local().shape)
@@ -129,6 +131,7 @@ while eta_lin > gamma_lin*eta_disc and iter < maxIter:
         myVerts = vertices(cell)
         eps_K = [myEdges.next(), myEdges.next(), myEdges.next()]
         a_K = [myVerts.next(), myVerts.next(), myVerts.next()]
+        mp = cell.midpoint().array()
         eta_NCK = 0.
         # a_K[n] is the vertex opposite to the edge eps_K[n]
         for i in range(0, len(eps_K)-1):
@@ -141,11 +144,11 @@ while eta_lin > gamma_lin*eta_disc and iter < maxIter:
            r_c[0:r_c.size/2] += 1./(cardT_e*d)*Rbar_e*(x_c[0:r_c.size/2] - a_K[i].point().array()[0]) 
            r_c[r_c.size/2:r_c.size] += 1./(cardT_e*d)*Rbar_e*(x_c[r_c.size/2:r_c.size] - a_K[i].point().array()[1]) 
            
-           adj_cells = eps_K[i].entities(d) # get cells which share edge eps_K[i]
-           # s := q = 2
-           mf.set_value(eps_K[i].mesh_id(), 1) # mark domain to integrate over
-           eta_NCK += assemble(jump(u)*jump(u)*dS(subdomain_data=mf)) / eps_K[i].length() # squared L2 norm of jump along edge
-           mf.set_value(eps_K[i].mesh_id(), 0) # un-mark domain
+           if eps_K[i].entities(d).size > 1: # if edge is internal
+               # s := q = 2
+               mf.set_value(eps_K[i].mesh_id(), 1) # mark domain to integrate over
+               eta_NCK += assemble(jump(u)*jump(u)*dS(subdomain_data=mf)) / eps_K[i].length() # squared L2 norm of jump along edge
+               mf.set_value(eps_K[i].mesh_id(), 0) # un-mark domain
         # add squared local discretisation estimator to total
         eta_disc += 2**(0.5)*(assemble_local((dflux+sigmaBar)**2*dx, cell)**(0.5) + eta_NCK)**2
         eta_osc += cell.h()/np.pi * assemble_local((f - f_h)**2*dx, cell)**(0.5)
@@ -160,7 +163,7 @@ while eta_lin > gamma_lin*eta_disc and iter < maxIter:
     r = interpolate(r, RTN)    
     # compute global discretisation and quadrature estimators
     eta_disc = eta_disc**(0.5)
-    eta_quad = assemble((q(u)*gu-sigmaBar)**2*dx)**(0.5)
+    eta_quad = assemble((q(u)*grad(u)-sigmaBar)**2*dx)**(0.5)
     # construct flux (d+l) for each element (Eq. (6.7))
     dflux.assign(-sigmaBar + f_hvec - r)
     lflux.assign(-sigmakBar + f_hvec - rk - dflux)
