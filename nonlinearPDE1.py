@@ -5,7 +5,7 @@ import numpy as np
 class nonlinearPDE1:
     def __init__(self, N, p):
         """
-        Sets up the 1D PDE: -grad((1+u)^2.grad(u)) = 0
+        Sets up the 2D PDE: -grad((1+u)^2.grad(u)) = 0
         
         Inputs:
         N: number of finite elements in mesh
@@ -14,7 +14,7 @@ class nonlinearPDE1:
         # set up function space
         self.d = d
         self.mesh = UnitSquareMesh(N,N)
-        self.V = FunctionSpace(self.mesh, 'CR', p)
+        self.V = FunctionSpace(self.mesh, 'CG', p)
         v = TestFunction(V)
         # set up BCs on left and right
         # lambda functions ensure the boundary methods take two variables
@@ -25,43 +25,6 @@ class nonlinearPDE1:
         self.uExpr = Expression('pow((pow(2,m+1) - 1)*x[0] + 1,(1/(m+1))) - 1', m = 2, degree=4)
         self.f = Constant(0.0)
         
-        # ERN ERRORS STUFF #
-        DG0 = FunctionSpace(self.mesh, 'DG', 0)
-        self.f_h = interpolate(f, DG0)
-        
-        self.F = VectorFunctionSpace(self.mesh, 'CR', 1, dim=d)
-        X = MeshCoordinates(self.mesh)
-        f_hvec = interpolate(X, self.F)
-        f_ = np.zeros(f_hvec.vector().get_local().shape) # create np array which contains values to be assigned to f_hvec
-        
-        self.dm = F.dofmap()
-        for cell in cells(self.mesh):
-            dofs = self.dm.cell_dofs(cell.index())
-            f_c = f_hvec.vector().get_local()[dofs] # get np array of all dof values in cell
-            mp = cell.midpoint().array() # get midpoint of cell
-            f_c[0:f_c.size/2] = f_h.vector().get_local()[cell.index()]*(f_c[0:f_c.size/2] - mp[0])/d # construct f_h in cell
-            f_c[f_c.size/2:f_c.size] = f_h.vector().get_local()[cell.index()]*(f_c[f_c.size/2:f_c.size] - mp[1])/d # note [x,x,x,y,y,y] structure of f_c
-            f_[dofs] = f_c # place cell values back into main array
-        
-        f_hvec.vector().set_local(f_)
-        
-        # we have constructed f_h in CR, which has dofs: pointwise evaluation
-        # need to constuct f_h in RTN, which has dofs: moments of the normal component against P_{q-1} on facets
-        # note that dofs are in the same locations for CR1 and RT1
-        self.RTN = FunctionSpace(self.mesh, 'RT', 1)
-        self.f_hvec = interpolate(f_hvec, self.RTN)
-        self.sigmakBar = Function(self.RTN)
-        self.sigmaBar = Function(self.RTN)
-        
-        self.R_eps_form = self.f_h*v*dx - inner(self.sigmakBar, grad(v))*dx
-        self.Rbar_eps_form = self.f_h*v*dx - inner(self.sigmaBar, grad(v))*dx
-        
-        self.F0 = VectorFunctionSpace(self.mesh, 'DG', degree=0, dim=d) # space for 0-order interpolants (sigma)
-        self.lflux = Function(self.RTN)
-        self.dflux = Function(self.RTN)
-        self.discflux = Function(self.RTN)
-        self.mf = MeshFunctionSizet(self.mesh, 1, 0)
-        self.x_ = interpolate(Expression(['x[0]', 'x[1]'], degree=0), self.F) # used as 'x' vector when constructing flux
         
     def left_boundary(self, x, on_boundary):
             return on_boundary and abs(x[0]) < 1E-14
@@ -99,18 +62,23 @@ class nonlinearPDE1:
         """
         
         V = self.V
+        bcs = [self.B1, self.B2] 
         u = TrialFunction(V)
         v = TestFunction(V)
-        u_k = interpolate(Constant(0.0), V) # previous (known) u
+        u_k = TrialFunction(V)
+        a0 = inner(grad(u_k), grad(v))*dx
+        L0 = f*v*dx
+        u_k = Function(V)
+        solve(a0 == L0, u_k, bcs)
         a = inner(self.q(u_k)*grad(u), grad(v))*dx
         L = self.f*v*dx
         
-        bcs = [self.B1, self.B2] 
+        
         
         u = Function(V)     # new unknown function
         itErr = 1.0           # error measure ||u-u_k||
-        iterDiffArray = []
-        exactErrArray = []
+        iterDiffArray = [errornorm(u_k, u, 'H1')]
+        exactErrArray = [errornorm(self.uExpr, u, 'H1')]
         iter = 0
         if ernErrors: error_estimators = np.array([[0.,0.,0.,0.]])
         # Begin Picard iterations
@@ -194,8 +162,8 @@ class nonlinearPDE1:
         du = Function(V)
         u = Function(V)
         itErr = 1.0
-        iterDiffArray = []
-        exactErrArray = []
+        iterDiffArray = [errornorm(u_k, u, 'H1')]
+        exactErrArray = [errornorm(self.uExpr, u, 'H1')]
         iter = 0
         while itErr > iterTol and iter < maxIter:
             iter += 1
@@ -272,11 +240,11 @@ class nonlinearPDE1:
                rk_c[rk_c.size/2:rk_c.size] += 1./(cardT_e*self.d)*R_e*(x_c[rk_c.size/2:rk_c.size] - a_K[i].point().array()[1]) 
                r_c[0:r_c.size/2] += 1./(cardT_e*self.d)*Rbar_e*(x_c[0:r_c.size/2] - a_K[i].point().array()[0]) 
                r_c[r_c.size/2:r_c.size] += 1./(cardT_e*self.d)*Rbar_e*(x_c[r_c.size/2:r_c.size] - a_K[i].point().array()[1]) 
-
                # s := q = 2
-               self.mf.set_value(eps_K[i].mesh_id(), 1) # mark domain to integrate over
-               eta_NCK += assemble(jump(u)*jump(u)*dS(subdomain_data=self.mf)) / eps_K[i].length() # squared L2 norm of jump along edge
-               self.mf.set_value(eps_K[i].mesh_id(), 0) # un-mark domain
+               if eps_K[i].entities(d).size > 1: # if edge is internal (else jump(u) should = 0)
+                   self.mf.set_value(eps_K[i].mesh_id(), 1) # mark domain to integrate over
+                   eta_NCK += assemble(jump(u)*jump(u)*dS(subdomain_data=self.mf)) / eps_K[i].length() # squared L2 norm of jump along edge
+                   self.mf.set_value(eps_K[i].mesh_id(), 0) # un-mark domain
             # add squared local discretisation estimator to total
             eta_disc += 2**(0.5)*(assemble_local((dflux+sigmaBar)**2*dx, cell)**(0.5) + eta_NCK)**2
             eta_osc += cell.h()/np.pi * assemble_local((f - self.f_h)**2*dx, cell)**(0.5)
@@ -304,34 +272,29 @@ class nonlinearPDE1:
         Plots the convergence data (exact errors and iterate differences) for 
         Newton and/or Picard soltutions of the given PDE
         """
+        from matplotlib import rc
+        import matplotlib.pylab as plt
+        
+        rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
+        rc('text', usetex=True)
         # check which methods have been used to solve PDE           
         if hasattr(self, 'newtonSol'):
             plt.figure(1)
-            plt.suptitle('Convergence data for PDE solution')
-            
-            plt.subplot(1,2,1)
-            plt.semilogy(self.newtonExactErr)
-            plt.ylabel('Newton exact error')
-            plt.xlabel('iteration')
-            
-            plt.subplot(1,2,2)
-            plt.semilogy(self.newtonIterDiff)
-            plt.ylabel('Newton iterate difference')
-            plt.xlabel('iteration')
+            plt.semilogy(self.newtonExactErr, 'r^-', linewidth=2, markersize=10)
+            plt.semilogy(self.newtonIterDiff, 'b^-', linewidth=2, markersize=10)
+            plt.ylabel('$H^1$ error', fontsize=40)
+            plt.xlabel('$k$', fontsize=40)
+            plt.legend(['Exact error', 'Iterate difference'], loc=3, fontsize=30)
+            plt.tick_params(labelsize=25)
         else:
             print 'No Newton solution calculated, run solveNewton method first'     
         if hasattr(self, 'picardSol'):
             plt.figure(2)
-            plt.suptitle('Convergence data for PDE solution')
-            
-            plt.subplot(1,2,1)
-            plt.semilogy(self.picardExactErr)
-            plt.ylabel('Picard exact error')
-            plt.xlabel('iteration')
-            
-            plt.subplot(1,2,2)
-            plt.semilogy(self.picardIterDiff)
-            plt.ylabel('Picard iterate difference')
-            plt.xlabel('iteration')
+            plt.semilogy(self.picardExactErr, 'r^-', linewidth=2, markersize=10)
+            plt.semilogy(self.picardIterDiff, 'b^-', linewidth=2, markersize=10)
+            plt.ylabel('$H^1$ error', fontsize=40)
+            plt.xlabel('$k$', fontsize=40)
+            plt.legend(['Exact error', 'Iterate difference'], loc=3, fontsize=30)
+            plt.tick_params(labelsize=25)
         else:
             print 'No Picard solution calculated, run solvePicard method first'       
