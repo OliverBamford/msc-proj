@@ -8,6 +8,24 @@ def left_boundary(x, on_boundary):
     return on_boundary and abs(x[0]) < 1E-14
 def right_boundary(x, on_boundary):
     return on_boundary and abs(x[0]-1) < 1E-14
+<<<<<<< HEAD
+=======
+def top_boundary(x, on_boundary):
+    return on_boundary and abs(x[1]-1) < 1E-14
+def bottom_boundary(x, on_boundary):
+    return on_boundary and abs(x[1]) < 1E-14
+def on_boundary(x, on_boundary):
+    return on_boundary and abs(x) < 1E-14
+
+
+#def q(x, u, p):
+#    return (1 + u)**2
+#    return (dot(grad(u), grad(u))**((p-2.)/2.)
+
+#F = q(x, u, p)
+#dqdu = derivative(q, u)
+
+>>>>>>> 3525389d3970950571018d2bbdede6823198a52c
 def q(u):
     #return (1+u)**2 
     return (inner(grad(u),grad(u)))**4
