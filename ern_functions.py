@@ -20,14 +20,13 @@ def get_fvec(f_h, mesh):
         dofs = dm.cell_dofs(cell.index())
         f_c = f_hvec.vector().get_local()[dofs] # get np array of all dof values in cell
         f_c *= f_h.vector().get_local()[cell.index()]/d
-        mp = cell.midpoint().array()# get midpoint of cell
-        f_c[0:f_c.size/2] -= f_h.vector().get_local()[cell.index()]*mp[0]/d # construct f_h in cell
-        f_c[f_c.size/2:f_c.size] -= f_h.vector().get_local()[cell.index()]*mp[1]/d # note [x,x,x,y,y,y] structure of f_c
+        mp = cell.midpoint().array()[0:2] # get midpoint of cell
+        f_c -= f_h.vector().get_local()[cell.index()]*mp.repeat(3)/d
         f_[dofs] = f_c # place cell values back into main array
     f_hvec.vector().set_local(f_)
     return f_hvec
     
-def get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p):
+def get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p, bcs):
     v = TestFunction(V)
     n = FacetNormal(mesh)
     qu = p/float(p-1)
@@ -48,6 +47,16 @@ def get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p):
     # find residual for each edge using 'test function trick'
     R_eps = assemble(f_h*v*dx - inner(sigma_lin(u, u_k), grad(v))*dx)
     Rbar_eps = assemble(f_h*v*dx - inner(sigma(u), grad(v))*dx)
+    if type(bcs) == list:
+        for bc in bcs: # so we can handle lists of bcs
+            bc.apply(R_eps, u.vector()) # apply bcs to residuals
+            bc.apply(Rbar_eps, u.vector())
+    else:
+        bcs.apply(R_eps, u.vector()) # apply bcs to residuals
+        bcs.apply(Rbar_eps, u.vector())
+    
+    print('resBar = ' + str(Rbar_eps.norm('l2')))
+    print('res =  ' + str(R_eps.norm('l2')))
     rk = Function(RT)
     r = Function(RT)
     rk_ = np.zeros(rk.vector().get_local().shape)
@@ -56,7 +65,6 @@ def get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p):
     eta_quad = 0.
     eta_osc = 0.
     eta_NC = 0.
-    eta_disc_noNC = 0.
     d_ = np.zeros(dflux.vector().get_local().shape)
     l_ = np.zeros(lflux.vector().get_local().shape)
     for cell in cells(mesh):
@@ -67,33 +75,32 @@ def get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p):
         dflux_c = dflux.vector().get_local()[dofs]
         lflux_c = lflux.vector().get_local()[dofs]
         x_c = x_.vector().get_local()[dofs]
-        myEdges = edges(cell)
-        myVerts = vertices(cell)
-        eps_K = [myEdges.next(), myEdges.next(), myEdges.next()]
-        a_K = [myVerts.next(), myVerts.next(), myVerts.next()]
+        #myEdges = edges(cell)
+        #myVerts = vertices(cell)
+        #eps_K = [myEdges.next(), myEdges.next(), myEdges.next()]
+        #a_K = [myVerts.next(), myVerts.next(), myVerts.next()]
         mp = cell.midpoint().array()[0:2] # midpoint is returned in (x,y,z) format
         eta_NCK = 0.
         # a_K[n] is the vertex opposite to the edge eps_K[n]
-        for i in range(len(eps_K)):
-           cardT_e = eps_K[i].entities(d).size # number of cells sharing e
-           R_e = R_eps[edge_dofs[eps_K[i].index()]][0] # find residual corresponding to edge
-           Rbar_e = Rbar_eps[edge_dofs[eps_K[i].index()]][0] # find barred residual corresponding to edge          
-           # find distance between all dofs on cell and vertex opposite to edge
+        for i, e_K in enumerate(edges(cell)):
+           cardT_e = e_K.entities(d).size # number of cells sharing e
+           R_e = R_eps[edge_dofs[e_K.index()]][0] # find residual corresponding to edge
+           Rbar_e = Rbar_eps[edge_dofs[e_K.index()]][0] # find barred residual corresponding to edge          
+           # find distance between all dofs on cell and cell midpoint (see Remark 6.7 of Ern)
            rk_c += 1./(cardT_e*d)*R_e*(x_c - mp.repeat(3))
            r_c += 1./(cardT_e*d)*Rbar_e*(x_c - mp.repeat(3))
            # s = q
-           mf.set_value(eps_K[i].index(), 1) # mark domain to integrate over
-           eta_NCK += assemble(inner(jump(u,n), jump(u,n))**(qu/2)*dS(1, subdomain_data=mf)) / eps_K[i].length() # Lq-norm of jump along edge^q
-           mf.set_value(eps_K[i].index(), 0) # un-mark domain
+           mf.set_value(e_K.index(), 1) # mark domain to integrate over
+           eta_NCK += assemble(inner(jump(u,n), jump(u,n))**(qu/2)*dS(1, subdomain_data=mf)) / e_K.length() # Lq-norm of jump along edge^q
+           mf.set_value(e_K.index(), 0) # un-mark domain
         
         dflux_c = -sigmaBar0.vector().get_local()[dofs0].repeat(3) + f_hvec.vector().get_local()[dofs] - r_c
         lflux_c = -sigmakBar0.vector().get_local()[dofs0].repeat(3) + f_hvec.vector().get_local()[dofs] - rk_c - dflux_c
         d_[dofs] = dflux_c
         l_[dofs] = lflux_c
-        eta_NCK = eta_NCK**(1/qu)
         dflux.vector().set_local(d_)
-        # add local discretisation estimator^q to total
-        eta_disc += (2**(1./p)*(assemble_local((inner(dflux+sigmaBar0,dflux+sigmaBar0))**(qu/2)*dx, cell)**(1/qu) + eta_NCK))**qu
+        # add local estimators^q to totals
+        eta_disc += (2**(1./p)*(assemble_local((inner(dflux+sigmaBar0,dflux+sigmaBar0))**(qu/2)*dx, cell)**(1/qu) + eta_NCK**(1/qu)))**qu
         eta_osc += cell.h()/np.pi*assemble_local((inner(f - f_h, f - f_h))**(qu/2)*dx, cell)
         eta_NC += eta_NCK
         rk_[dofs] = rk_c # place cell values back into main array
@@ -115,11 +122,12 @@ def get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p):
     #print(project(div(lflux + dflux), RT).vector().get_local())
     return eta_disc, eta_lin, eta_quad, eta_osc, eta_NC
 
-def solve_2D_flux_PDE(q, f, N, p, bcs, dqdu = None, 
+def solve_2D_flux_PDE(q, f, V, p, bcs, dqdu = None, 
                       dqdg = None, u0 = None, exact_solution = None, 
                       solver = 'Newton'):
     """
     Solves the 2D flux-type PDE:
+    
     find u in L^p((0,1)x(0,1)) such that:
     -div(q(u, grad(u))*grad(u)) = f
     + Dirichlet BCs
@@ -127,12 +135,11 @@ def solve_2D_flux_PDE(q, f, N, p, bcs, dqdu = None,
     
     Inputs:
     q: function handle
-    dqdu: function handle, partial derivative dq/du
-    dqdg: function handle, partial derivative dqd(grad(u))
+    dqdu: function handle, Gateaux derivative <dq/du, du> with u-u_k subbed in for du
     f: FEniCS function
-    N: Mesh refinement
+    V: Function space (Must be CR1)
     p: integer
-    bcs: FEniCS Dirichlet BCs (or a tuple of Dirichlet BCs)
+    bcs: FEniCS Dirichlet BCs (or an iterable of Dirichlet BCs)
     u0: UFL expression, initial guess. If not specified, solution to PDE with
     q(u) = 1 will be used.
     exact_solution: UFL expression for analytic solution of PDE, if applicable
@@ -145,9 +152,8 @@ def solve_2D_flux_PDE(q, f, N, p, bcs, dqdu = None,
     """
     
     ### MESH SETUP ###
-    mesh = UnitSquareMesh(N,N)
+    mesh = V.mesh()
     mesh.init()
-    V = FunctionSpace(mesh, 'CR', 1)
     if exact_solution != None:
         u_e = interpolate(exact_solution, V)
     f_h = interpolate(f, FunctionSpace(mesh, 'DG', 0))
@@ -168,28 +174,17 @@ def solve_2D_flux_PDE(q, f, N, p, bcs, dqdu = None,
     sigma = lambda u: q(u)*grad(u) # nonlinear flux function
     qu = p/float(p-1)
     if solver == 'Newton':  
-        # make sure these are callable
-        if dqdu == None:
-            dqdu = lambda u : 0*u
-        if dqdg == None:
-            dqdg = lambda u : 0*u    
-        bcs_du = DirichletBC(V, Constant(0.0), 'on_boundary') # homog. bcs for Newton step
-        sigma_lin = lambda u, u_k: q(u_k)*grad(u) \
-                                    + (u - u_k)*dqdu(u_k)*grad(u_k) \
-                                    + grad(u - u_k)*inner(dqdg(u_k), grad(u_k))
-        #F = (inner(sigma_lin(u, u_k), grad(v)) - f_h*v)*dx
-        F = (inner(sigma(u), grad(v)) - f_h*v)*dx
-        du = TrialFunction(V)
-        J = derivative(F, u, du)
-        du = Function(V)
+        sigma_lin = lambda u, u_k: q(u_k)*grad(u) + dqdu(u, u_k)*grad(u_k)
     elif solver == 'Picard':
-        u = TrialFunction(V)
         sigma_lin = lambda u, u_k: q(u_k)*grad(u)
-        F = (inner(sigma_lin(u, u_k), grad(v)) - f_h*v)*dx
-        a = lhs(F)
-        L = rhs(F)
+        
     else: print('Solver not recognised'); exit
     
+    u = TrialFunction(V)
+    F = (inner(sigma_lin(u, u_k), grad(v)) - f_h*v)*dx
+    a = lhs(F)
+    L = rhs(F)
+    u = Function(V)
     # Construct f-vector
     f_hvec = get_fvec(f_h, mesh)
     
@@ -205,19 +200,15 @@ def solve_2D_flux_PDE(q, f, N, p, bcs, dqdu = None,
     # Begin Picard iterations
     while eta_lin > gamma_lin*eta_disc and iter < maxIter:
         iter += 1
-        if solver == 'Newton':
-            A, b = assemble_system(J, -F, bcs_du)
-            solve(A, du.vector(), b)
-            u.vector()[:] += du.vector()
-        elif solver == 'Picard':
-            solve(a == L, u, bcs)
-        # calculate iterate difference and exact error in L2 norm
+        solve(a == L, u, bcs)
+            
+        # calculate iterate difference and exact error in H1 norm
         itErr = errornorm(u_k, u, 'H1')
         exErr = errornorm(exact_solution, u, 'H1')
         iterDiffArray.append(itErr) # fill arrays with error data
         exactErrArray.append(exErr)
         
-        eta_disc, eta_lin, eta_quad, eta_osc, eta_NC = get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p)
+        eta_disc, eta_lin, eta_quad, eta_osc, eta_NC = get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p, bcs)
         error_estimators = np.concatenate((error_estimators, np.array([[eta_disc, eta_lin, eta_quad, eta_osc, eta_NC]])), axis = 0)
         JupArray.append(assemble((inner(sigma(u_e) - sigma(u), sigma(u_e) - sigma(u)))**(qu/2)*dx)**(1/qu) + error_estimators[-1,4])
         if dispOutput:
