@@ -1,2 +1,2 @@
 # msc-proj
-Oxford MSc MMSC dissertaion project: Stopping Critera for PDE-Constrained Optimisation
+Oxford MSc MMSC dissertation project: Stopping Critera for PDE-Constrained Optimisation
