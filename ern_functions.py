@@ -45,6 +45,7 @@ def get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p, bcs):
     x_ = interpolate(MeshCoordinates(mesh), RT) # used as 'x' vector when constructing flux
     # construct sum (second terms Eqns (6.7) and (6.9) for each cell K
     # find residual for each edge using 'test function trick'
+    # unbarred residual (from Ern 2015) should be ~zero if everything is working correctly
     R_eps = assemble(f_h*v*dx - inner(sigma_lin(u, u_k), grad(v))*dx)
     Rbar_eps = assemble(f_h*v*dx - inner(sigma(u), grad(v))*dx)
     if type(bcs) == list:
@@ -54,9 +55,7 @@ def get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p, bcs):
     else:
         bcs.apply(R_eps, u.vector()) # apply bcs to residuals
         bcs.apply(Rbar_eps, u.vector())
-    
-    print('resBar = ' + str(Rbar_eps.norm('l2')))
-    print('res =  ' + str(R_eps.norm('l2')))
+
     rk = Function(RT)
     r = Function(RT)
     rk_ = np.zeros(rk.vector().get_local().shape)
@@ -114,17 +113,12 @@ def get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p, bcs):
     eta_NC = eta_NC**(1/qu)
     eta_quad = assemble((inner(sigma(u)-sigmaBar0,sigma(u)-sigmaBar0))**(qu/2)*dx)**(1/qu)
     eta_osc = eta_osc**(1/qu)
-    # construct flux (d+l) for each element (Eq. (6.7))
-    #dflux.assign(-sigmaBar + f_hvec - r) 
-    #lflux.assign(-sigmakBar + f_hvec - rk - dflux)
-    #lflux = interpolate(lflux_vec, RTN)
     eta_lin = assemble(inner(lflux,lflux)**(qu/2)*dx)**(1/(2*qu))
-    #print(project(div(lflux + dflux), RT).vector().get_local())
     return eta_disc, eta_lin, eta_quad, eta_osc, eta_NC
 
 def solve_2D_flux_PDE(q, f, V, p, bcs, dqdu = None, 
                       dqdg = None, u0 = None, exact_solution = None, 
-                      solver = 'Newton'):
+                      solver = 'Newton', gamma_lin = 0.1, maxIter = 25):
     """
     Solves the 2D flux-type PDE:
     
@@ -144,11 +138,14 @@ def solve_2D_flux_PDE(q, f, V, p, bcs, dqdu = None,
     q(u) = 1 will be used.
     exact_solution: UFL expression for analytic solution of PDE, if applicable
     solver: string, 'Newton' or 'Picard'
+    gamma_lin: float, for ern stoping criteria eta_lin < gamma_lin*eta_disc
+    maxIter: integer, maximum number of iterations
     
     Outputs:
     u: FEniCS function that solves the PDE
     error_estimators: Ern error estimators from each iteration in format
     [eta_disc, eta_lin, eta_quad, eta_osc, eta_NC]
+    JupArray: upper bound J^{up} on flux error at each iteration
     """
     
     ### MESH SETUP ###
@@ -177,7 +174,6 @@ def solve_2D_flux_PDE(q, f, V, p, bcs, dqdu = None,
         sigma_lin = lambda u, u_k: q(u_k)*grad(u) + dqdu(u, u_k)*grad(u_k)
     elif solver == 'Picard':
         sigma_lin = lambda u, u_k: q(u_k)*grad(u)
-        
     else: print('Solver not recognised'); exit
     
     u = TrialFunction(V)
@@ -188,19 +184,19 @@ def solve_2D_flux_PDE(q, f, V, p, bcs, dqdu = None,
     # Construct f-vector
     f_hvec = get_fvec(f_h, mesh)
     
-    eta_lin = 1.
-    eta_disc = 0.
-    gamma_lin = 0.0000001
-    maxIter = 25; dispOutput = True
+    dispOutput = True
     iterDiffArray = [0]
     exactErrArray = [0]
     iter = 0
-    error_estimators = np.array([[0.,0.,0.,0.,0.]])
+    # get estimators for initial guess
+    error_estimators = np.array([[0, 0, 0, 0, 0]])
     JupArray = [0]
+    eta_lin = 1
+    eta_disc = 0
     # Begin Picard iterations
     while eta_lin > gamma_lin*eta_disc and iter < maxIter:
         iter += 1
-        solve(a == L, u, bcs)
+        solve(a == L, u, bcs, solver_parameters={"linear_solver": "lu"})
             
         # calculate iterate difference and exact error in H1 norm
         itErr = errornorm(u_k, u, 'H1')
@@ -217,4 +213,4 @@ def solve_2D_flux_PDE(q, f, V, p, bcs, dqdu = None,
             + ' , eta_disc = ' + str(eta_disc))
         u_k.assign(u) # update for next iteration
 
-    return u, error_estimators
+    return u, error_estimators, JupArray
