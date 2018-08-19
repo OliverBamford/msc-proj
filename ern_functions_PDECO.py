@@ -62,7 +62,7 @@ def get_estimators_PDECO(H, subspace_index, f, f_h, f_lin_h, f_hvec, f_lin_hvec,
     sigmaBar0 = project(sigma(u), F0)
     dflux = Function(RT)
     lflux = Function(RT)
-    mf = MeshFunctionSizet(mesh, d-1, 0) # used to mark edges for integration
+    mf = MeshFunction('size_t', mesh, 1, 0) # used to mark edges for integration
     x_ = interpolate(MeshCoordinates(mesh), RT) # used as 'x' vector when constructing flux
     # construct sum (second terms Eqns (6.7) and (6.9) for each cell K
     # find residual for each edge using 'test function trick'
@@ -100,8 +100,8 @@ def get_estimators_PDECO(H, subspace_index, f, f_h, f_lin_h, f_hvec, f_lin_hvec,
         # a_K[n] is the vertex opposite to the edge eps_K[n]
         for i, e_K in enumerate(edges(cell)):
            cardT_e = e_K.entities(d).size # number of cells sharing e
-           R_e = R_eps[edge_dofs[e_K.index()]][0] # find residual corresponding to edge
-           Rbar_e = Rbar_eps[edge_dofs[e_K.index()]][0] # find barred residual corresponding to edge          
+           R_e = R_eps[edge_dofs[e_K.index()]] # find residual corresponding to edge
+           Rbar_e = Rbar_eps[edge_dofs[e_K.index()]]# find barred residual corresponding to edge          
            # find distance between all dofs on cell and cell midpoint (see Remark 6.7 of Ern)
            rk_c += 1./(cardT_e*d)*R_e*(x_c - mp.repeat(3))
            r_c += 1./(cardT_e*d)*Rbar_e*(x_c - mp.repeat(3))
