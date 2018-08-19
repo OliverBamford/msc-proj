@@ -124,7 +124,7 @@ class nonlinearPDECO:
         iter = 0
         while iter < 10:
             iter += 1
-            solve(a == L, U, bcs)
+            solve(a == L, U, bcs, solver_parameters={"linear_solver": "lu"})
 
             sigma_1 = lambda u: self.q(u)*grad(u)
             sigma_lin_1 = lambda u, u_k: self.q(u_k)*grad(u) + self.dqdu(u_k)*(u - u_k)*grad(u_k)
@@ -228,6 +228,22 @@ plt.semilogy(error_estimators3[:,0:4].sum(axis=1),  'g^-', linewidth=2, markersi
 #plt.semilogy(error_estimators1[:,0]*0.1,  'r-', linewidth=1.5, markersize=10, label='$\gamma_{lin}\eta_{disc}$')
 plt.xlabel('Iterations', fontsize=40)
 plt.ylabel('Dual error (f)', fontsize=40)
+plt.xticks(fontsize=25)
+plt.yticks(fontsize=25)
+plt.legend(loc=0, fontsize=30)
+
+error_estimators_total = np.sqrt(error_estimators1**2 + error_estimators2**2 + error_estimators3**2)
+plt.figure(4, figsize=(12,10))
+plt.semilogy(error_estimators_total[:,0],  'r^-', linewidth=2, markersize=10, label='$\eta_{disc}$')
+plt.semilogy(error_estimators_total[:,1],  'b^-', linewidth=2, markersize=10, label='$\eta_{lin}$')
+plt.semilogy(error_estimators_total[:,2], 'm^-', linewidth=2, markersize=10, label='$\eta_{quad}$')
+plt.semilogy(error_estimators_total[:,3], label='$\eta_{osc}$')
+plt.semilogy(error_estimators_total[:,4], label='$\eta_{NC}$')
+plt.semilogy(error_estimators_total[:,0:4].sum(axis=1),  'g^-', linewidth=2, markersize=10, label='$\eta$')
+#plt.semilogy(Jup1[0:(pr[-1]+1)],  'k^-', linewidth=2, markersize=10, label='$J_u^{up}$')
+#plt.semilogy(error_estimators1[:,0]*0.1,  'r-', linewidth=1.5, markersize=10, label='$\gamma_{lin}\eta_{disc}$')
+plt.xlabel('Iterations', fontsize=40)
+plt.ylabel('Dual error (total)', fontsize=40)
 plt.xticks(fontsize=25)
 plt.yticks(fontsize=25)
 plt.legend(loc=0, fontsize=30)

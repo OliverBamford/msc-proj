@@ -114,7 +114,8 @@ def get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p, bcs):
     eta_quad = assemble((inner(sigma(u)-sigmaBar0,sigma(u)-sigmaBar0))**(qu/2)*dx)**(1/qu)
     eta_osc = eta_osc**(1/qu)
     eta_lin = assemble(inner(lflux,lflux)**(qu/2)*dx)**(1/(2*qu))
-    return eta_disc, eta_lin, eta_quad, eta_osc, eta_NC
+    eta_F = assemble(inner(sigma(u)+dflux+lflux,sigma(u)+dflux+lflux)**(qu/2)*dx)**(1/(2*qu))
+    return eta_disc, eta_lin, eta_quad, eta_osc, eta_NC, eta_F
 
 def solve_2D_flux_PDE(q, f, V, p, bcs, dqdu = None, 
                       dqdg = None, u0 = None, exact_solution = None, 
@@ -189,7 +190,7 @@ def solve_2D_flux_PDE(q, f, V, p, bcs, dqdu = None,
     exactErrArray = [0]
     iter = 0
     # get estimators for initial guess
-    error_estimators = np.array([[0, 0, 0, 0, 0]])
+    error_estimators = np.array([[0, 0, 0, 0, 0, 0]])
     JupArray = [0]
     eta_lin = 1
     eta_disc = 0
@@ -204,8 +205,8 @@ def solve_2D_flux_PDE(q, f, V, p, bcs, dqdu = None,
         iterDiffArray.append(itErr) # fill arrays with error data
         exactErrArray.append(exErr)
         
-        eta_disc, eta_lin, eta_quad, eta_osc, eta_NC = get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p, bcs)
-        error_estimators = np.concatenate((error_estimators, np.array([[eta_disc, eta_lin, eta_quad, eta_osc, eta_NC]])), axis = 0)
+        eta_disc, eta_lin, eta_quad, eta_osc, eta_NC, eta_F = get_estimators(V, f, f_h, f_hvec, sigma, sigma_lin, u, u_k, mesh, p, bcs)
+        error_estimators = np.concatenate((error_estimators, np.array([[eta_disc, eta_lin, eta_quad, eta_osc, eta_NC, eta_F]])), axis = 0)
         JupArray.append(assemble((inner(sigma(u_e) - sigma(u), sigma(u_e) - sigma(u)))**(qu/2)*dx)**(1/qu) + error_estimators[-1,4])
         if dispOutput:
             print('k = ' + str(iter) + ' | u-diff =  ' + str(itErr) + 
