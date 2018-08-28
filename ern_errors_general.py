@@ -9,7 +9,7 @@ rc('text', usetex=True)
 
 
 ## MODEL PROBLEM 1 ###       
-mesh = UnitSquareMesh(10,10)
+mesh = UnitSquareMesh(30,30)
 V = FunctionSpace(mesh, 'CR', 1)   
               
 # set up BCs on left and right
@@ -30,54 +30,58 @@ u1, error_estimators1, Jup1 = solve_2D_flux_PDE(q, Constant(0.0), V, 2, bcs,
                                         exact_solution = exact_solution,
                                         solver = 'Newton',
                                         gamma_lin = 0,
-                                        maxIter = 12) # will run until maxIter = 25 is reached
-pr = range(10)
+                                        maxIter = 8) # will run until maxIter = 25 is reached
+
 plt.figure(1, figsize=(12,10))
-plt.semilogy(error_estimators1[pr,0],  'r^-', linewidth=2, markersize=10, label='$\eta_{disc}$')
-plt.semilogy(error_estimators1[pr,1],  'b^-', linewidth=2, markersize=10, label='$\eta_{lin}$')
-plt.semilogy(error_estimators1[pr,2], 'm^-', linewidth=2, markersize=10, label='$\eta_{quad}$')
-#plt.semilogy(error_estimators1[pr,3], label='$\eta_{osc}$')
-#plt.semilogy(error_estimators1[pr,4], label='$\eta_{NC}$')
-plt.semilogy(error_estimators1[pr,4:6].sum(axis=1),  'g^-', linewidth=2, markersize=10, label='$\eta$')
-plt.semilogy(Jup1[0:(pr[-1]+1)],  'k^-', linewidth=2, markersize=10, label='$J_u^{up}$')
-plt.semilogy(error_estimators1[pr,0]*0.1,  'r-', linewidth=1.5, markersize=10, label='$\gamma_{lin}\eta_{disc}$')
+rn = range(1, len(Jup1[1:8])+1)
+plt.semilogy(rn, Jup1[1:8],  'k^-', linewidth=3.5, markersize=17, label='$J^{up}$')
+plt.semilogy(rn, error_estimators1[1:8,0],  'r^-', linewidth=2, markersize=10, label='$\eta_{disc}$')
+plt.semilogy(rn, error_estimators1[1:8,0]*0.1,  'r-', linewidth=1.5, markersize=10, label='$\gamma_{lin}\eta_{disc}$')
+plt.semilogy(rn, error_estimators1[1:8,1],  'b^-', linewidth=2, markersize=10, label='$\eta_{lin}$')
+plt.semilogy(rn, error_estimators1[1:8,2], 'm^-', linewidth=2, markersize=10, label='$\eta_{quad}$')
+#plt.semilogy(error_estimators1[1:8,3], label='$\eta_{osc}$')
+#plt.semilogy(error_estimators1[1:8,4], label='$\eta_{NC}$')
+plt.semilogy(rn, error_estimators1[1:8,0:4].sum(axis=1),  'g^-', linewidth=2, markersize=10, label='$\eta$')
+
+plt.xlabel('Iterations', fontsize=40)
+plt.ylabel('Dual error', fontsize=40)
+plt.xticks(fontsize=25)
+plt.yticks(fontsize=25)
+plt.legend(loc=7, fontsize=30)
+
+## MODEL PROBLEM 2 ###
+mesh = UnitSquareMesh(30,30)
+V = FunctionSpace(mesh, 'CR', 1)
+x, y= sym.symbols('x[0] x[1]')
+uExSym = 9./10.*((0.5)**(10./9.) - ((x - 0.5)**2 + (y - 0.5)**2)**(5./9.))
+uExpr = Expression(sym.printing.ccode(uExSym), degree=4)
+bcs = DirichletBC(V, uExpr, 'on_boundary')
+u0Sym = uExSym*(1 + (x-0.5)*(y-0.5))
+
+q = lambda u: (inner(grad(u),grad(u)))**4
+dqdu = lambda u, u_k: 8*inner(grad(u_k),grad(u_k))**3*inner(grad(u_k),grad(u - u_k))
+
+u2, error_estimators2, Jup2 = solve_2D_flux_PDE(q, Constant(2.0), V, 10, bcs, 
+                                        dqdu = dqdu,
+                                        u0 = Expression(sym.printing.ccode(u0Sym),degree=4), 
+                                        exact_solution = uExpr,
+                                        solver = 'Newton',
+                                        gamma_lin = 0,
+                                        maxIter = 15)
+                                 
+plt.figure(2, figsize=(12,10))
+rn = range(1, len(Jup2)-1)
+plt.semilogy(rn, Jup2[1:-1],  'k^-', linewidth=3.5, markersize=17, label='$\mathcal{J}^{up}$')
+plt.semilogy(rn, error_estimators2[1:-1,0], 'r^-', linewidth=2, markersize=10, label='$\eta_{disc}$')
+plt.semilogy(rn, error_estimators2[1:-1,0]*0.1,  'r-', linewidth=1.5, markersize=10, label='$\gamma_{lin}\eta_{disc}$')
+plt.semilogy(rn, error_estimators2[1:-1,1], 'b^-', linewidth=2, markersize=10, label='$\eta_{lin}$')
+plt.semilogy(rn, error_estimators2[1:-1,2], 'm^-', linewidth=2, markersize=10, label='$\eta_{quad}$')
+#plt.semilogy(error_estimators2[1:-1,3],  label='$\eta_{osc}$')
+#plt.semilogy(rn, error_estimators2[1:-1,4], label='$\eta_{NC}$')
+plt.semilogy(rn, error_estimators2[1:-1,0:4].sum(axis=1),  'g^-', linewidth=2, markersize=10, label='$\eta$')
+
 plt.xlabel('Iterations', fontsize=40)
 plt.ylabel('Dual error', fontsize=40)
 plt.xticks(fontsize=25)
 plt.yticks(fontsize=25)
 plt.legend(loc=0, fontsize=30)
-
-## MODEL PROBLEM 2 ###
-#mesh = UnitSquareMesh(10,10)
-#V = FunctionSpace(mesh, 'CR', 1)
-#x, y= sym.symbols('x[0] x[1]')
-#uExSym = 9./10.*((0.5)**(10./9.) - ((x - 0.5)**2 + (y - 0.5)**2)**(5./9.))
-#uExpr = Expression(sym.printing.ccode(uExSym), degree=4)
-#bcs = DirichletBC(V, uExpr, 'on_boundary')
-#u0Sym = uExSym*(1 + (x-0.5)*(y-0.5))
-#
-#q = lambda u: (inner(grad(u),grad(u)))**4
-#dqdu = lambda u, u_k: 8*inner(grad(u_k),grad(u_k))**3*inner(grad(u_k),grad(u - u_k))
-#
-#u2, error_estimators2, Jup2 = solve_2D_flux_PDE(q, Constant(2.0), V, 10, bcs, 
-#                                        dqdu = dqdu,
-#                                        u0 = Expression(sym.printing.ccode(u0Sym),degree=4), 
-#                                        exact_solution = uExpr,
-#                                        solver = 'Newton',
-#                                        gamma_lin = 0,
-#                                        maxIter = 12)
-#pr = range(11)                                     
-#plt.figure(2, figsize=(12,10))
-#plt.semilogy(error_estimators2[pr,0], 'r^-', linewidth=2, markersize=10, label='$\eta_{disc}$')
-#plt.semilogy(error_estimators2[pr,1], 'b^-', linewidth=2, markersize=10, label='$\eta_{lin}$')
-##plt.semilogy(error_estimators2[pr,2], 'm^-', linewidth=2, markersize=10, label='$\eta_{quad}$')
-##plt.semilogy(error_estimators2[pr,3], label='$\eta_{osc}$')
-##plt.semilogy(error_estimators2[pr,4], label='$\eta_{NC}$')
-#plt.semilogy(error_estimators2[pr,0:4].sum(axis=1),  'g^-', linewidth=2, markersize=10, label='$\eta$')
-#plt.semilogy(Jup2[0:(pr[-1]+1)],  'k^-', linewidth=2, markersize=10, label='$J^{up}$')
-#plt.semilogy(error_estimators2[pr,0]*0.1,  'g-', linewidth=1.5, markersize=10, label='$\gamma_{lin}\eta_{disc}$')
-#plt.xlabel('Iterations', fontsize=40)
-#plt.ylabel('Dual error', fontsize=40)
-#plt.xticks(fontsize=25)
-#plt.yticks(fontsize=25)
-#plt.legend(loc=0, fontsize=30)
