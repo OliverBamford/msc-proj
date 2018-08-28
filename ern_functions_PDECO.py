@@ -130,5 +130,5 @@ def get_estimators_PDECO(H, subspace_index, f, f_h, f_lin_h, f_hvec, f_lin_hvec,
     eta_NC = eta_NC**(1/qu)
     eta_quad = assemble((inner(sigma(u)-sigmaBar0,sigma(u)-sigmaBar0))**(qu/2)*dx)**(1/qu)
     eta_osc = eta_osc**(1/qu)
-    eta_lin = assemble(inner(lflux,lflux)**(qu/2)*dx)**(1/(2*qu))
+    eta_lin = assemble(inner(lflux,lflux)**(qu/2)*dx)**(1/qu)
     return eta_disc, eta_lin, eta_quad, eta_osc, eta_NC
